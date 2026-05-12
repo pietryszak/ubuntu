@@ -3,11 +3,12 @@
 **Sprzęt:** Dell Latitude 5421 (Intel 11. gen Tiger Lake)  
 **Konfiguracja:** KDE Plasma 6 (minimal, Wayland) · BTRFS · LUKS2 (pełne szyfrowanie) · Snapper + grub-btrfs · hibernacja · SSH ograniczony do `192.168.1.10`
 
-Założenia: 32 GB RAM, dysk NVMe, instalację robisz przez SSH z komputera `192.168.1.10` do laptopa zbootowanego z **Ubuntu Server 26.04 LTS Live USB** (środowisko instalacyjne / konsola z `apt` i `debootstrap`).
+Założenia: 32 GB RAM, dysk NVMe, instalację robisz przez SSH z komputera `192.168.1.10` do laptopa zbootowanego z **Ubuntu Server 26.04 LTS Live USB** (na konsoli live tylko krótko: hasło, `openssh-server`, adres IP; `debootstrap` i narzędzia dysku instalujesz już po SSH).
 
 Release notes: [Ubuntu 26.04 LTS](https://documentation.ubuntu.com/release-notes/26.04/).
 
 > **ZANIM ZACZNIESZ:**
+>
 > - Dysk laptopa zostanie **całkowicie wyczyszczony** — zrób backup.
 > - W BIOS-ie Dell-a (F2 przy logo) wyłącz **Secure Boot** (`Boot Configuration → Secure Boot = Disabled`). Hibernacja nie działa z włączonym Secure Boot.
 > - Podłącz kabel Ethernet i ładowarkę.
@@ -16,13 +17,13 @@ Release notes: [Ubuntu 26.04 LTS](https://documentation.ubuntu.com/release-notes
 
 ## SEKCJA 0 — Live USB + dostęp SSH
 
-Zbootuj laptop z **Ubuntu Server 26.04 LTS** ISO. Wejdź do powłoki z `apt` (np. drugi TTY `Ctrl+Alt+F2`, menu **Help** / **Enter shell**, albo środowisko po wyborze „Try/Install” — zależnie od wariantu ISO). Typowo dostępny jest użytkownik **`ubuntu`** (pierwsze logowanie często bez hasła; ustaw hasło).
+Zbootuj laptop z **Ubuntu Server 26.04 LTS** ISO. Wejdź do powłoki z `apt` (np. drugi TTY `Ctrl+Alt+F2`, menu **Help** / **Enter shell**, albo środowisko po wyborze „Try/Install” — zależnie od wariantu ISO). Typowo dostępny jest użytkownik `**ubuntu-server`** (pierwsze logowanie często bez hasła; ustaw hasło).
 
 ```bash
-sudo passwd ubuntu
+sudo passwd ubuntu-server
 
 sudo apt update
-sudo apt install -y openssh-server debootstrap gdisk btrfs-progs cryptsetup
+sudo apt install -y openssh-server
 sudo systemctl start ssh
 
 ip -4 addr show | grep inet
@@ -31,11 +32,16 @@ ip -4 addr show | grep inet
 Z komputera `192.168.1.10`:
 
 ```bash
-ssh ubuntu@<IP_LAPTOPA>
+ssh ubuntu-server@<IP_LAPTOPA>
 sudo -i
 ```
 
-**Od tego momentu wszystkie komendy w sesji SSH na roota.**
+**Od tego momentu wszystkie komendy w sesji SSH na roota.** Na laptopie wpisałeś minimum — resztę pakietów do instalacji zrób już zdalnie:
+
+```bash
+apt update
+apt install -y debootstrap gdisk btrfs-progs cryptsetup
+```
 
 ---
 
@@ -88,13 +94,9 @@ mkfs.fat -F32 -n EFI $PART_EFI
 lsblk -po name,size,fstype,label $DISK
 ```
 
-### LUKS2 — KDF musi być **PBKDF2** (nie argon2id), bo GRUB 2.12 nie wspiera Argon2
+### LUKS2 z `argon2id`
 
-> **Krytyczne:** GRUB 2.12 z Ubuntu 26.04 (pakiet `grub-efi-amd64`) **nie wspiera Argon2** dla LUKS2 — tylko PBKDF2. Skutek przy Argon2id: `Invalid passphrase` w GRUB mimo poprawnego hasła.
-
-> **Hasło LUKS musi być ASCII** — GRUB ma **US keyboard layout**. Litery a-z A-Z, cyfry, typowe znaki specjalne są OK.
-
-`--iter-time 4000` daje kilka milionów iteracji PBKDF2 — kilka sekund na odblokowanie w GRUB.
+GRUB 2.14 w Ubuntu 26.04 (`grub-efi-amd64` 2.14-2ubuntu1) odblokowuje LUKS2 z `**argon2id**` — w `grub-install` doda się moduł `**argon2**` (już ujęty w SEKCJI 11). **Hasło LUKS musi być ASCII** — GRUB ma US keyboard layout.
 
 ```bash
 cryptsetup luksFormat \
@@ -102,8 +104,10 @@ cryptsetup luksFormat \
     --cipher aes-xts-plain64 \
     --key-size 512 \
     --hash sha512 \
-    --pbkdf pbkdf2 \
-    --iter-time 4000 \
+    --pbkdf argon2id \
+    --pbkdf-memory 524288 \
+    --pbkdf-parallel 4 \
+    --iter-time 2000 \
     --use-random \
     --label cryptsystem \
     --verify-passphrase \
@@ -114,17 +118,7 @@ cryptsetup open $PART_LUKS cryptroot
 mkfs.btrfs -L UBUNTU /dev/mapper/cryptroot
 ```
 
-> **Jeśli już sformatowałeś z `argon2id`** — konwersja KDF (z Live USB):
->
-> ```bash
-> cryptsetup luksDump $PART_LUKS | grep -E "^Keyslots:|^  [0-9]:|PBKDF:"
-> cryptsetup luksConvertKey --pbkdf pbkdf2 --iter-time 4000 $PART_LUKS
-> cryptsetup open $PART_LUKS cryptroot
-> mount -o subvol=@ /dev/mapper/cryptroot /mnt
-> cryptsetup luksConvertKey --pbkdf pbkdf2 --iter-time 4000 \
->   --key-file /mnt/etc/cryptsetup-keys.d/cryptroot.key $PART_LUKS
-> umount /mnt && cryptsetup close cryptroot
-> ```
+`--pbkdf-memory 524288` (512 MiB) i `--iter-time 2000` — wygodne dla GRUB w pre-boot (na 32 GB RAM laptopa bez problemu) i przy okazji szybkie do odblokowania w initramfs.
 
 ---
 
@@ -186,28 +180,30 @@ findmnt /mnt
 
 ### Rollback `/` a historia, maile, Flatpak użytkownika
 
-- **`snapper -c root rollback`** nie cofa `@home` — profil przeglądarki, poczta, `~/.var` (Flatpak per-user) zostają bieżące.
-- **grub-btrfs** bootuje starszy `/`, ale **`fstab` montuje ten sam `@home`** — zamierzone.
+- `**snapper -c root rollback**` nie cofa `@home` — profil przeglądarki, poczta, `~/.var` (Flatpak per-user) zostają bieżące.
+- **grub-btrfs** bootuje starszy `/`, ale `**fstab` montuje ten sam `@home`** — zamierzone.
 - **Flatpak systemowy** (`/var/lib/flatpak` na `@flatpak`) może się zmienić przy rollbacku roota; dane użytkownika w `~/.var` na `@home`.
 
 ### 3.1 Co po co — subwoluminy
 
-| Subwolumin | Mount | Po co |
-|------------|------|------|
-| `@` | `/` | system + snapshoty `snapper -c root` |
-| `@home` | `/home` | dane użytkownika |
-| `@opt` | `/opt` | oprogramowanie spoza APT |
-| `@cache` | `/var/cache` | cache APT — poza snapshotami `/` |
-| `@log` | `/var/log` | logi przeżywają rollback `/` |
-| `@tmp` | `/var/tmp` | tymczasowe |
-| `@spool` | `/var/spool` | kolejki |
-| `@sddm` | `/var/lib/sddm` | SDDM po rollbacku |
-| `@swap` | `/swap` | swapfile — bez kompresji i CoW |
-| `@docker` | `/var/lib/docker` | Docker |
-| `@containers` | `/var/lib/containers` | Podman rootful |
-| `@flatpak` | `/var/lib/flatpak` | Flatpak systemowy |
-| `@libvirt` | `/var/lib/libvirt` | QEMU/KVM |
-| `@games` | `/games` | Steam/gry (opcjonalnie) |
+
+| Subwolumin    | Mount                 | Po co                                |
+| ------------- | --------------------- | ------------------------------------ |
+| `@`           | `/`                   | system + snapshoty `snapper -c root` |
+| `@home`       | `/home`               | dane użytkownika                     |
+| `@opt`        | `/opt`                | oprogramowanie spoza APT             |
+| `@cache`      | `/var/cache`          | cache APT — poza snapshotami `/`     |
+| `@log`        | `/var/log`            | logi przeżywają rollback `/`         |
+| `@tmp`        | `/var/tmp`            | tymczasowe                           |
+| `@spool`      | `/var/spool`          | kolejki                              |
+| `@sddm`       | `/var/lib/sddm`       | SDDM po rollbacku                    |
+| `@swap`       | `/swap`               | swapfile — bez kompresji i CoW       |
+| `@docker`     | `/var/lib/docker`     | Docker                               |
+| `@containers` | `/var/lib/containers` | Podman rootful                       |
+| `@flatpak`    | `/var/lib/flatpak`    | Flatpak systemowy                    |
+| `@libvirt`    | `/var/lib/libvirt`    | QEMU/KVM                             |
+| `@games`      | `/games`              | Steam/gry (opcjonalnie)              |
+
 
 ---
 
@@ -293,10 +289,10 @@ for d in dev dev/pts proc sys run sys/firmware/efi/efivars; do
     mount --make-rslave /mnt/$d
 done
 
-cp /etc/resolv.conf /mnt/etc/resolv.conf
-
 chroot /mnt /bin/bash
 ```
+
+> DNS w chroocie działa „samo": `/etc/resolv.conf` z debootstrapa to symlink na `../run/systemd/resolve/stub-resolv.conf`, a `/run` przed chwilą zbindowaliśmy z live ISO.
 
 Załaduj zmienne w chroocie:
 
@@ -322,14 +318,22 @@ export LUKS_UUID=$(blkid -s UUID -o value $PART_LUKS)
 
 Ubuntu nie używa `non-free` jak Debian — komponenty to `main restricted universe multiverse`.
 
+`rm -f /etc/apt/sources.list` kasuje **legacy** jednolinijkowy plik po debootstrapie. Tworzymy **deb822** w `sources.list.d/ubuntu.sources` (format domyślny od 24.04). Dwa bloki — `archive` na zwykłe paczki, `security.ubuntu.com` na `-security`, dokładnie jak na stocku.
+
 ```bash
 rm -f /etc/apt/sources.list
 mkdir -p /etc/apt/sources.list.d
 
 cat > /etc/apt/sources.list.d/ubuntu.sources <<'EOF'
 Types: deb
-URIs: http://archive.ubuntu.com/ubuntu
-Suites: resolute resolute-updates resolute-backports resolute-security
+URIs: http://archive.ubuntu.com/ubuntu/
+Suites: resolute resolute-updates resolute-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.ubuntu.com/ubuntu/
+Suites: resolute-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
@@ -398,12 +402,16 @@ EOF
 
 ### 7.4 Użytkownik + sudo
 
-Grupa **`sudo`** (nie `wheel`).
+Grupa `**sudo**` (nie `wheel`).
 
 ```bash
 apt install -y sudo
 
 passwd
+
+# 'netdev' tworzy dopiero network-manager (sec 10); 'input' bywa też dosypywany
+# przez X11 — załóżmy je defensywnie, żeby useradd przeszedł od ręki
+for g in netdev input; do getent group "$g" >/dev/null || groupadd -r "$g"; done
 
 useradd -m -G sudo,audio,video,plugdev,netdev,input -s /bin/bash $USERNAME
 passwd $USERNAME
@@ -413,7 +421,7 @@ passwd $USERNAME
 
 ## SEKCJA 8 — Jądro, firmware, sterowniki Dell Latitude 5421
 
-Jeden meta-pakiet **`linux-firmware`** zamiast rozbitnych pakietów Debiana.
+Jeden meta-pakiet `**linux-firmware**` zamiast rozbitnych pakietów Debiana.
 
 ```bash
 apt install -y \
@@ -461,7 +469,7 @@ GRUB_TERMINAL_OUTPUT=console
 EOF
 
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck \
-    --modules="part_gpt cryptodisk luks2 pbkdf2 gcry_rijndael gcry_sha512 btrfs"
+    --modules="part_gpt cryptodisk luks2 argon2 pbkdf2 gcry_rijndael gcry_sha512 btrfs"
 ```
 
 > `resume=` / `resume_offset=` dodamy w sekcji 13.
@@ -674,7 +682,7 @@ EOF
 apt install -y snapper inotify-tools make git
 ```
 
-> W chroocie: **`snapper --no-dbus`** (brak `snapperd`/D-Bus).
+> W chroocie: `**snapper --no-dbus**` (brak `snapperd`/D-Bus).
 
 ### 14.2–14.4 Konfiguracja
 
@@ -721,20 +729,7 @@ systemctl enable snapper-cleanup.timer
 
 ## SEKCJA 15 — grub-btrfs
 
-```bash
-apt update
-apt search grub-btrfs
-```
-
-Jeśli `apt install -y grub-btrfs` działa (universe musi być włączone w sources):
-
-```bash
-apt install -y grub-btrfs
-systemctl enable grub-btrfsd.service 2>/dev/null || systemctl enable grub-btrfsd 2>/dev/null || true
-update-grub
-```
-
-Jeśli brak pakietu — z gita:
+**Ubuntu nie pakuje `grub-btrfs` w żadnej suicie** (sprawdzone na [packages.ubuntu.com](https://packages.ubuntu.com/search?keywords=grub-btrfs&searchon=names&suite=all&section=all)) — `apt search grub-btrfs` zwraca pustkę. Instalujemy z [Antynea/grub-btrfs](https://github.com/Antynea/grub-btrfs) (git + make były już doinstalowane w SEKCJI 14).
 
 ```bash
 cd /tmp
@@ -749,9 +744,11 @@ GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS="systemd.volatile=state"
 EOF
 
 make install
-systemctl enable grub-btrfsd.service 2>/dev/null || true
+systemctl enable grub-btrfsd.service
 update-grub
 ```
+
+`make install` kopiuje skrypt `41_snapshots-btrfs` do `/etc/grub.d/`, `config` do `/etc/default/grub-btrfs/`, binarkę `grub-btrfsd` i unit systemd. Na koniec sam zawoła `grub-mkconfig` — `update-grub` powyżej jest dla pewności, że wpisy snapshotów Snappera trafiają do menu.
 
 ---
 
@@ -788,11 +785,11 @@ sudo ufw status verbose
 
 ### 17.1 Oczekiwany przebieg
 
-1. GRUB + hasło LUKS  
-2. Initramfs + keyfile  
-3. NetworkManager (Ethernet)  
-4. SDDM → **Plasma (Wayland)**  
-5. PipeWire (17.2) jeśli brak dźwięku  
+1. GRUB + hasło LUKS
+2. Initramfs + keyfile
+3. NetworkManager (Ethernet)
+4. SDDM → **Plasma (Wayland)**
+5. PipeWire (17.2) jeśli brak dźwięku
 
 ### 17.2 PipeWire (jako użytkownik)
 
@@ -910,10 +907,11 @@ sudo snapper -c root rollback <numer>
 sudo reboot
 ```
 
-### GRUB: `Invalid passphrase`
+### GRUB: `Invalid passphrase` / `Argon2 not supported`
 
-1. Hasło nie-ASCII / zły layout w GRUB — zmień hasło (Live): `cryptsetup luksChangeKey /dev/nvme0n1p2`  
-2. Argon2id zamiast PBKDF2 — konwersja jak w sekcji 2 (Live).
+1. Hasło nie-ASCII / zły layout w GRUB — zmień hasło (Live): `cryptsetup luksChangeKey /dev/nvme0n1p2`.
+2. Brakuje modułu `argon2` w `grubx64.efi` — patrz **SEKCJA 11** (`--modules="... argon2 ..."` + `update-grub` + `grub-install`).
+3. Recovery: konwersja slotu na argon2id albo z powrotem na pbkdf2 — patrz **Załącznik B** → „Migracja istniejącego slotu na Argon2id”.
 
 ### LUKS pyta dwa razy
 
@@ -980,16 +978,22 @@ Backport z tego samego archiwum:
 sudo apt install -t resolute-backports linux-generic linux-headers-generic
 ```
 
-### Szybsze drugie odblokowanie (keyfile, slot 1) — Argon2id
+### Migracja istniejącego slotu na Argon2id
 
-GRUB czyta tylko slot z hasłem (PBKDF2). **Keyfile w initramfs** może użyć Argon2id:
+Jeśli LUKS2 został kiedyś sformatowany z PBKDF2 (stary przewodnik), slot można przekonwertować bez reinstalacji:
 
 ```bash
 sudo cryptsetup luksConvertKey \
-    --pbkdf argon2id --pbkdf-memory 524288 --iter-time 800 \
+    --pbkdf argon2id --pbkdf-memory 524288 --pbkdf-parallel 4 --iter-time 2000 \
+    /dev/nvme0n1p2
+
+sudo cryptsetup luksConvertKey \
+    --pbkdf argon2id --pbkdf-memory 524288 --pbkdf-parallel 4 --iter-time 800 \
     --key-file /etc/cryptsetup-keys.d/cryptroot.key \
     /dev/nvme0n1p2
 ```
+
+Po tym **musisz mieć w GRUB moduł `argon2`** (SEKCJA 11). Sprawdź: `sudo cryptsetup luksDump /dev/nvme0n1p2 | grep PBKDF`.
 
 ---
 
