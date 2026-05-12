@@ -454,12 +454,14 @@ echo 'UMASK=0077' >> /etc/initramfs-tools/initramfs.conf
 
 `quiet loglevel=3` — mniej szumu na konsoli (ACPI Della, watchdog przy reboot).
 
+`i915.enable_psr=0 i915.enable_fbc=0 i915.enable_dc=0` — **krytyczne dla Tiger Lake na Latitude 5421**: domyślny PSR/FBC/DC w sterowniku `i915` powoduje **martwy ekran + brak reakcji klawiatury** w okolicach przełączania trybu wyświetlania (typowo: koniec boota, przejście z konsoli na SDDM/KMS). Bez tych trzech parametrów boot wisi tuż przed loginem.
+
 ```bash
 cat > /etc/default/grub <<'EOF'
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=3
 GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Ubuntu`
-GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3 i915.enable_psr=0 i915.enable_fbc=0 i915.enable_dc=0"
 GRUB_CMDLINE_LINUX=""
 GRUB_ENABLE_CRYPTODISK=y
 GRUB_DISABLE_OS_PROBER=true
@@ -469,10 +471,16 @@ GRUB_TERMINAL_OUTPUT=console
 EOF
 
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck \
+    --no-uefi-secure-boot \
     --modules="part_gpt cryptodisk luks2 argon2 pbkdf2 gcry_rijndael gcry_sha512 btrfs"
+
+# Weryfikacja — argon2 MUSI być w embedded binarce, inaczej LUKS-2 z argon2id nie odblokuje
+grep -aoE 'argon2|luks2|cryptodisk|pbkdf2|btrfs' /boot/efi/EFI/ubuntu/grubx64.efi | sort -u
 ```
 
 > `resume=` / `resume_offset=` dodamy w sekcji 13.
+
+> **Krytyczne — `--no-uefi-secure-boot`.** Bez tego flag-a `grub-install` na Ubuntu cichcem podstawi **podpisany przez Canonical `grubx64.efi`** (z `grub-efi-amd64-signed`), który **nie ma w środku modułu `argon2`** (Canonical go nie podpisuje, zob. [LP #2141233](https://bugs.launchpad.net/ubuntu/+source/grub2-signed/+bug/2141233)). Skutek: GRUB ładuje banner, próbuje `cryptomount` przeciwko slotowi argon2id z naszej SEKCJI 2 — i wiesza się bez prompta, bo nie umie wyliczyć KDF. Weryfikacja z `grep -aoE` musi pokazać **pięć** linii (`argon2 btrfs cryptodisk luks2 pbkdf2`); jeśli `argon2` brak — usuń `grub-efi-amd64-signed`+`shim-signed` i powtórz `grub-install`. Plik `grubx64.efi` zbudowany lokalnie ma ~300–500 KB; signed Canonical ~2.7 MB.
 
 ### 9.3 Pierwsze wygenerowanie
 
@@ -480,6 +488,15 @@ grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubunt
 update-initramfs -u -k all
 update-grub
 ```
+
+> **Krytyczna asercja — nie pomijaj.** `update-initramfs` musi pobiec **po** instalacji `cryptsetup-initramfs` (sec 8) i **po** wpisaniu `KEYFILE_PATTERN` (9.1). Bez tego `/boot/initrd.img-*` nie zawiera ani binarki `cryptsetup`, ani `crypttab`, ani `cryptroot.key` → GRUB pokaże menu, ale kernel po starcie nie odblokuje rootfs i wejdziesz w kernel panic / czarny ekran. Weryfikacja:
+>
+> ```bash
+> lsinitramfs /boot/initrd.img-$(uname -r 2>/dev/null || ls /boot | grep ^vmlinuz | head -1 | sed 's/vmlinuz-//') \
+>   | grep -E 'sbin/cryptsetup$|cryptroot\.key|conf/conf\.d/cryptroot'
+> ```
+>
+> Powinieneś zobaczyć **trzy trafienia**. Pustka = wracaj do `apt install -y cryptsetup-initramfs && update-initramfs -u -k all && update-grub`.
 
 ---
 
@@ -565,6 +582,11 @@ systemctl enable sddm
 systemctl enable bluetooth
 systemctl enable power-profiles-daemon
 systemctl enable thermald
+
+# KRYTYCZNE — debootstrap zostawia default.target wskazujący na multi-user.target
+# (lub w ogóle bez wpisu). Bez tego SDDM jest enabled, ale 'graphical.target'
+# nigdy nie zostaje osiągnięty → ekran logowania KDE się nie pokazuje.
+systemctl set-default graphical.target
 ```
 
 ### 11.1 Wymuś Wayland w SDDM
