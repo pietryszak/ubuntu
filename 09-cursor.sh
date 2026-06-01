@@ -5,6 +5,10 @@ set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 09-cursor.sh"; exit 1; }
 
+# .deb Cursora pyta przez debconf, czy dodać repo APT (auto-aktualizacje).
+# Nieinteraktywny frontend = bez okienka, bierze domyślną odpowiedź.
+export DEBIAN_FRONTEND=noninteractive
+
 API="https://www.cursor.com/api/download?platform=linux-x64&releaseTrack=stable"
 DEB="/tmp/cursor-latest.deb"
 
@@ -21,6 +25,10 @@ for i in 1 2 3 4 5; do
   curl -fL -C - -o "${DEB}" "${DEB_URL}" && break
   echo "!! Pobieranie urwane (próba ${i}/5), wznawiam..." >&2; sleep 3
 done
+
+# Preseed: wymuś "yes" na pytanie o repo APT Cursora (klucz: cursor/add-cursor-repo).
+# Dzięki temu repo dla auto-aktualizacji dodaje się bez okienka, nawet na czystym systemie.
+echo "cursor cursor/add-cursor-repo boolean true" | debconf-set-selections
 
 # Instalacja wraz z zależnościami (apt sam dociągnie biblioteki).
 apt-get install -y "${DEB}"

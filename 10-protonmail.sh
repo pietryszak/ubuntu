@@ -6,6 +6,9 @@ set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 10-protonmail.sh"; exit 1; }
 
+# Bez interaktywnych okienek debconf przy instalacji .deb.
+export DEBIAN_FRONTEND=noninteractive
+
 DEB_URL="https://proton.me/download/mail/linux/ProtonMail-desktop-beta.deb"
 DEB="/tmp/protonmail-desktop.deb"
 
