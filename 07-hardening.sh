@@ -57,9 +57,25 @@ ufw --force enable
 systemctl enable ufw
 ufw status verbose
 
+# IP tego PC do podstawienia w instrukcji dla laptopa (pierwszy adres ni-loopback).
+PC_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+PC_IP="${PC_IP:-<IP_TEGO_PC>}"
+
 echo
 echo ">> Hardening gotowy."
-echo ">> Aby wyłączyć logowanie hasłem (po wgraniu klucza z laptopa):"
-echo "     ssh-copy-id ${USERNAME}@<IP_TEGO_PC>      # z laptopa"
-echo "     sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' \\"
-echo "        /etc/ssh/sshd_config.d/99-hardening.conf && sudo systemctl restart ssh"
+echo "============================================================"
+echo ">> TERAZ NA LAPTOPIE (Linux) — wygeneruj klucz i wgraj go na ten PC:"
+echo
+echo "   # 1) klucz (POMIŃ, jeśli masz już ~/.ssh/id_ed25519):"
+echo "   ssh-keygen -t ed25519 -C \"${USERNAME}@laptop\""
+echo
+echo "   # 2) wgraj klucz publiczny na ten PC (poprosi RAZ o hasło):"
+echo "   ssh-copy-id ${USERNAME}@${PC_IP}"
+echo
+echo "   # 3) sprawdź logowanie bez hasła:"
+echo "   ssh ${USERNAME}@${PC_IP}"
+echo
+echo ">> Dopiero GDY logowanie kluczem działa — TU NA PC wyłącz hasła:"
+echo "   sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' \\"
+echo "     /etc/ssh/sshd_config.d/99-hardening.conf && sudo systemctl restart ssh"
+echo "============================================================"

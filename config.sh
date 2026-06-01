@@ -37,7 +37,7 @@ EXTRA_SUBVOLS=(
   "@var_tmp=var/tmp"
   "@var_spool=var/spool"
   "@var_lib_snapd=var/lib/snapd"        # Snap (domyślny w Kubuntu); usuń jeśli nie używasz
-  # "@var_lib_flatpak=var/lib/flatpak"  # Flatpak / KDE Discover
+  "@var_lib_flatpak=var/lib/flatpak"    # Flatpak / KDE Discover (08 instaluje Flatpak -> trzymamy poza snapshotami)
   # "@var_lib_docker=var/lib/docker"    # Docker
   # "@var_lib_libvirt=var/lib/libvirt"  # KVM/QEMU
 )

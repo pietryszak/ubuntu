@@ -55,6 +55,6 @@ if [[ "${INSTALL_FLATPAK}" == "yes" ]]; then
   apt-get install -y flatpak
   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
   echo ">> Flatpak + Flathub gotowe."
-  echo ">> Jeśli chcesz dane Flatpak na osobnym subwolumenie: odkomentuj"
-  echo "   @var_lib_flatpak w config.sh PRZED instalacją systemowych Flatpaków."
+  echo ">> Dane Flatpak (/var/lib/flatpak) są na osobnym subwolumenie @var_lib_flatpak"
+  echo "   (tworzony w 01, domyślnie włączony w config.sh) -> poza snapshotami roota."
 fi

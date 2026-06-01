@@ -128,6 +128,7 @@ sudo bash 02-tpm2.sh             # TPM2 auto-unlock (poda hasło LUKS)
 sudo bash 03-swap-hibernate.sh   # swap + hibernacja
 sudo bash 04-nvidia.sh           # sterownik NVIDIA + hibernacja
 sudo bash 05-snapper-grub-btrfs.sh
+# UWAGA: 06-user-subvolumes.sh NIE tutaj — robisz je po restarcie, jako user BEZ sudo (patrz niżej).
 sudo bash 07-hardening.sh        # (opcjonalnie) SSH + UFW ograniczone do SSH_FROM
 sudo bash 08-brave.sh            # (opcjonalnie) Brave + Flatpak/Flathub
 sudo bash 09-cursor.sh           # (opcjonalnie) Cursor (najnowszy .deb z API)
@@ -137,7 +138,7 @@ sudo reboot
 
 > `03`/`05`/`07` zapytają o login (domyślnie wykryty z `sudo`), a `03` o rozmiar swap (domyślnie 1.5×RAM). `07` sam wykryje IP, z którego łączysz się przez SSH, i ograniczy do niego dostęp (możesz podać `any`). Regułę UFW dodaje **przed** włączeniem zapory — nie odetnie Ci sesji.
 
-Po restarcie (przez SSH) — jako Twój użytkownik, **bez sudo**, po pierwszym zalogowaniu do sesji graficznej i z zamkniętymi przeglądarkami:
+**Krok 06 (po restarcie):** jako Twój użytkownik, **bez sudo**, po pierwszym zalogowaniu do sesji graficznej i z zamkniętymi przeglądarkami:
 
 ```bash
 bash 06-user-subvolumes.sh       # wyklucza ~/.cache, ~/snap, ~/.var/app, Trash ze snapshotów @home
@@ -161,10 +162,10 @@ Na **laptopie** (`192.168.1.249`):
 ssh-keygen -t ed25519 -C "johndoe@laptop"     # Enter x3 (lub ustaw passphrase)
 
 # 2. Wgraj klucz publiczny na PC (poprosi RAZ o hasło użytkownika):
-ssh-copy-id johndoe@<IP_PC>
+ssh-copy-id johndoe@192.168.1.10
 
 # 3. Sprawdź, że wchodzi bez hasła:
-ssh johndoe@<IP_PC>
+ssh johndoe@192.168.1.10
 ```
 
 Gdy logowanie kluczem działa, **na PC** wyłącz hasła (zostaje tylko klucz):
@@ -174,7 +175,7 @@ sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' \
   /etc/ssh/sshd_config.d/99-hardening.conf && sudo systemctl restart ssh
 ```
 
-> `<IP_PC>` sprawdzisz na PC: `ip -4 a` (albo łącz się przez `johndoe@kubuntu.local`, jeśli avahi działa).
+> PC ma stały adres `192.168.1.10` (gdyby się zmienił: `ip -4 a` na PC albo łącz się przez `johndoe@kubuntu.local`, jeśli avahi działa).
 > Nie wyłączaj hasła, zanim klucz nie zadziała — inaczej odetniesz sobie SSH (zostanie tylko logowanie lokalne na PC).
 
 ---
