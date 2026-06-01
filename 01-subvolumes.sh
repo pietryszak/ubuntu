@@ -86,7 +86,12 @@ mkdir -p /mnt2
 mount -o subvol=@,compress=zstd:1,noatime "${ROOTDEV}" /mnt2
 mount "${BOOTPART}" /mnt2/boot
 mount "${EFIPART}" /mnt2/boot/efi
-for d in dev dev/pts proc sys run; do mount --rbind "/${d}" "/mnt2/${d}"; done
+# --make-rslave: bez tego (przy współdzielonej propagacji) późniejszy 'umount -lR /mnt2'
+# przenosi się na ŻYWY /dev/pts i ubija pty sesji live ("sudo: unable to open pty").
+for d in dev dev/pts proc sys run; do
+  mount --rbind "/${d}" "/mnt2/${d}"
+  mount --make-rslave "/mnt2/${d}"
+done
 
 # DNS w chroot działa przez podmontowane /run (systemd-resolved z live).
 # Jeśli apt nie rozwiązuje nazw, odkomentuj poniższą linię:
