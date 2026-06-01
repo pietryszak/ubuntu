@@ -35,8 +35,11 @@ else
   # UWAGA: pin 'tpm2' jest w osobnej paczce clevis-tpm2 (bez niej: "not a valid pin").
   apt-get install -y clevis clevis-tpm2 clevis-luks clevis-initramfs cryptsetup-initramfs tpm2-tools
   echo ">> Zapisuję klucz TPM2 w slocie LUKS przez clevis (podaj obecne hasło LUKS):"
-  # PCR 7 = stan Secure Boot. Dla maks. niezawodności można użyć '{}' (bez PCR).
-  clevis luks bind -d "${LUKS}" tpm2 "{\"pcr_ids\":\"${TPM2_PCRS}\"}"
+  # PCR 7 = stan Secure Boot. Bank sha256 jawnie — clevis domyślnie próbuje sha1,
+  # którego nowoczesne TPM-y nie mają aktywnego ("Unable to validate ... PCR bank 'sha1'").
+  # Dla maks. niezawodności można użyć '{}' (bez PCR).
+  PCR_BANK="${TPM2_PCR_BANK:-sha256}"
+  clevis luks bind -d "${LUKS}" tpm2 "{\"pcr_bank\":\"${PCR_BANK}\",\"pcr_ids\":\"${TPM2_PCRS}\"}"
   echo ">> Zapisane tokeny LUKS:"; clevis luks list -d "${LUKS}" || true
   update-initramfs -u -k all
 fi
