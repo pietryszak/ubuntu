@@ -26,13 +26,27 @@ mount -o subvolid=5 "${ROOTDEV}" /mnt
 btrfs subvolume show /mnt/@swap >/dev/null 2>&1 || btrfs subvolume create /mnt/@swap
 umount /mnt
 
-grep -q 'subvol=@swap' /etc/fstab || \
+# Wpis montowania @swap (Calamares mógł już go dodać jako subvol=/@swap — nie dubluj)
+grep -qE 'subvol=/?@swap([,[:space:]]|$)' /etc/fstab || \
   echo "UUID=${BTRFS_UUID} /swap btrfs subvol=@swap,nodatacow,noatime 0 0" >> /etc/fstab
 mkdir -p /swap
 mountpoint -q /swap || mount /swap
 
-# Swapfile = RAM + bufor (patrz config.sh: best practice dla hibernacji)
-if [[ ! -f /swap/swapfile ]]; then
+# Swapfile o żądanym rozmiarze. Jeśli istnieje (np. z Calamares) i ma inny rozmiar
+# — odtwórz na właściwy (= RAM + bufor, best practice dla hibernacji).
+DESIRED_BYTES="$(numfmt --from=iec "${SWAP_SIZE^^}")"
+RECREATE=1
+if [[ -f /swap/swapfile ]]; then
+  CUR_BYTES="$(stat -c%s /swap/swapfile 2>/dev/null || echo 0)"
+  if [[ "${CUR_BYTES}" == "${DESIRED_BYTES}" ]]; then
+    RECREATE=0
+  else
+    say "Istniejący swapfile ma $(numfmt --to=iec "${CUR_BYTES}"), żądany ${SWAP_SIZE} — odtwarzam."
+  fi
+fi
+if [[ "${RECREATE}" -eq 1 ]]; then
+  swapoff /swap/swapfile 2>/dev/null || true
+  rm -f /swap/swapfile
   btrfs filesystem mkswapfile --size "${SWAP_SIZE}" /swap/swapfile
 fi
 swapon --show | grep -q '/swap/swapfile' || swapon /swap/swapfile

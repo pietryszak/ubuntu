@@ -96,10 +96,13 @@ chroot /mnt2 apt-get update
 chroot /mnt2 apt-get install -y openssh-server avahi-daemon
 chroot /mnt2 systemctl enable ssh
 
-umount -R /mnt2
-umount -R /mnt
-cryptsetup close cryptroot
+# Sprzątanie odporne na zajęte /run/user/* (lazy umount w razie potrzeby)
+sync
+umount -R /mnt2 2>/dev/null || umount -lR /mnt2 2>/dev/null || true
+umount -R /mnt  2>/dev/null || umount -lR /mnt  2>/dev/null || true
+cryptsetup close cryptroot 2>/dev/null || true
+sync
 
 echo
 echo ">> GOTOWE. Wyjmij USB i zrestartuj:  sudo systemctl reboot"
-echo ">> Po restarcie wejdziesz przez SSH do zainstalowanego systemu i uruchomisz 02..05."
+echo ">> Po restarcie wejdziesz przez SSH do zainstalowanego systemu i uruchomisz 02..08."
