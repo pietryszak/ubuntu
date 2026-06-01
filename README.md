@@ -133,7 +133,7 @@ sudo bash 07-hardening.sh        # (opcjonalnie) SSH + UFW ograniczone do SSH_FR
 sudo bash 08-brave.sh            # (opcjonalnie) Brave + Flatpak/Flathub
 sudo bash 09-cursor.sh           # (opcjonalnie) Cursor (najnowszy .deb z API)
 sudo bash 10-protonmail.sh       # (opcjonalnie) Proton Mail desktop (.deb, beta)
-sudo bash 11-cli-tools.sh        # (opcjonalnie) +btop +fastfetch +neovim +git +wget +curl, -vim
+sudo bash 98-cli-tools.sh        # (opcjonalnie) +btop +fastfetch +neovim +git +wget +curl, -vim
 sudo reboot
 ```
 
@@ -196,7 +196,7 @@ sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' \
 | `08-brave.sh` | [SSH→system] | sudo | Brave + Flatpak (opcjonalnie) |
 | `09-cursor.sh` | [SSH→system] | sudo | Cursor — najnowszy .deb z API (opcjonalnie) |
 | `10-protonmail.sh` | [SSH→system] | sudo | Proton Mail desktop .deb, beta (opcjonalnie) |
-| `11-cli-tools.sh` | [SSH→system] | sudo | +btop +fastfetch +neovim +git +wget +curl, -vim (opcjonalnie) |
+| `98-cli-tools.sh` | [SSH→system] | sudo | +btop +fastfetch +neovim +git +wget +curl, -vim (opcjonalnie) |
 | `99-verify.sh` | [SSH→system] | sudo | szybka weryfikacja |
 
 Skrypty współdzielą `lib.sh` (detekcja sprzętu + pytania) i `config.sh` (opcjonalne nadpisania — domyślnie pusty). Wartości, których nie da się wykryć (login, IP), są pytane interaktywnie.
