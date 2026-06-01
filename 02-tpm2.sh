@@ -24,7 +24,12 @@ if [[ "${KIND}" == dracut ]]; then
   systemd-cryptenroll --tpm2-device=list || true
   echo ">> Zapisuję klucz TPM2 (podaj obecne hasło LUKS):"
   # Dla wymuszenia PIN dodaj: --tpm2-with-pin=yes
-  systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs="${TPM2_PCRS}" "${LUKS}"
+  # Puste TPM2_PCRS => brak wiązania z PCR (przetrwa aktualizacje BIOS).
+  if [[ -n "${TPM2_PCRS}" ]]; then
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs="${TPM2_PCRS}" "${LUKS}"
+  else
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs= "${LUKS}"
+  fi
   cp -a /etc/crypttab "/etc/crypttab.bkp.$(date +%s)"
   grep -q 'tpm2-device=auto' /etc/crypttab || sed -i '/luks/ s/$/,tpm2-device=auto/' /etc/crypttab
   echo ">> /etc/crypttab:"; cat /etc/crypttab
@@ -39,7 +44,14 @@ else
   # którego nowoczesne TPM-y nie mają aktywnego ("Unable to validate ... PCR bank 'sha1'").
   # Dla maks. niezawodności można użyć '{}' (bez PCR).
   PCR_BANK="${TPM2_PCR_BANK:-sha256}"
-  clevis luks bind -d "${LUKS}" tpm2 "{\"pcr_bank\":\"${PCR_BANK}\",\"pcr_ids\":\"${TPM2_PCRS}\"}"
+  # Puste TPM2_PCRS => '{}' (bez PCR): TPM wydaje klucz niezależnie od firmware,
+  # więc aktualizacja BIOS/UEFI NIE psuje auto-unlock. Z PCR => wiązanie z bootem.
+  if [[ -n "${TPM2_PCRS}" ]]; then
+    CLEVIS_CFG="{\"pcr_bank\":\"${PCR_BANK}\",\"pcr_ids\":\"${TPM2_PCRS}\"}"
+  else
+    CLEVIS_CFG="{}"
+  fi
+  clevis luks bind -d "${LUKS}" tpm2 "${CLEVIS_CFG}"
   echo ">> Zapisane tokeny LUKS:"; clevis luks list -d "${LUKS}" || true
 
   # --- Drobne usprawnienia bootu (opcjonalne, nieszkodliwe) ---

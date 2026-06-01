@@ -16,8 +16,13 @@ LUKSPART=""    # np. /dev/nvme0n1p3  (LUKS2 -> Btrfs)
 # 96g: 64 GB RAM + zapas, z naddatkiem starcza na hibernację.
 SWAP_SIZE="96g"
 
-# --- TPM2: rejestry PCR (7 = stan Secure Boot) ---
-TPM2_PCRS="7"
+# --- TPM2: rejestry PCR ---
+# PUSTE = brak PCR (clevis: '{}') => TPM wydaje klucz niezależnie od stanu firmware.
+#   + plus: aktualizacja BIOS/UEFI NIE psuje auto-unlock (nie pyta o hasło).
+#   - minus: brak wiązania z pomiarem bootu; przy wyłączonym Secure Boot i tak
+#            ochrona z PCR jest minimalna, więc dla desktopa to rozsądny wybór.
+# "7" = wiązanie ze stanem Secure Boot (po każdym flashu BIOS trzeba przepiąć).
+TPM2_PCRS=""
 
 # --- Login docelowy (puste = $SUDO_USER i pyta; ustawione = bez pytania) ---
 USERNAME="johndoe"
