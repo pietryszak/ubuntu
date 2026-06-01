@@ -45,9 +45,11 @@ parent_disk() {
   [[ -n "$pk" ]] && printf '/dev/%s' "$pk"
 }
 
-# Pierwsza partycja danego typu FS na danym dysku (np. vfat, ext4)
+# Pierwsza PARTYCJA (TYPE=part) danego typu FS na danym dysku (np. vfat, ext4).
+# Filtr TYPE=part pomija zmapowane urządzenia (np. otwarty cryptroot/btrfs).
 part_by_fstype() {
-  lsblk -rno NAME,FSTYPE "$1" 2>/dev/null | awk -v t="$2" '$2==t{print "/dev/"$1; exit}'
+  lsblk -lnpo NAME,TYPE,FSTYPE "$1" 2>/dev/null \
+    | awk -v t="$2" '$2=="part" && $3==t {print $1; exit}'
 }
 
 # RAM w GiB (zaokrąglone w górę)
