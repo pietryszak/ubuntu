@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# [SSH->live] Uruchom w środowisku LIVE PO instalacji bazowej Calamares
+# (po "Wyjdź do live", PRZED restartem).
+#
+# Co robi:
+#   - dokłada subwolumeny wg dobrych praktyk i przenosi do nich dane,
+#   - włącza kompresję zstd dla @ i @home,
+#   - przez chroot instaluje openssh-server + avahi do docelowego systemu,
+#     żeby po restarcie wejść od razu przez SSH.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=config.sh
+source "${SCRIPT_DIR}/config.sh"
+
+[[ $EUID -eq 0 ]] || { echo "Uruchom jako root: sudo bash 01-subvolumes.sh"; exit 1; }
+
+echo ">> Dysk:   ${DISK}"
+echo ">> EFI:    ${EFIPART}"
+echo ">> /boot:  ${BOOTPART}"
+echo ">> LUKS:   ${LUKSPART}"
+read -rp "Czy te urządzenia są poprawne? Wpisz 'tak', aby kontynuować: " ans
+[[ "${ans}" == "tak" ]] || { echo "Przerwano."; exit 1; }
+
+swapoff -a 2>/dev/null || true
+umount -R /mnt 2>/dev/null || true
+umount -R /mnt2 2>/dev/null || true
+
+if ! cryptsetup status cryptroot >/dev/null 2>&1; then
+  echo ">> Otwieram LUKS (podaj hasło):"
+  cryptsetup open "${LUKSPART}" cryptroot
+fi
+ROOTDEV="/dev/mapper/cryptroot"
+BTRFS_UUID="$(blkid -s UUID -o value "${ROOTDEV}")"
+echo ">> Btrfs UUID: ${BTRFS_UUID}"
+
+mount -o subvolid=5 "${ROOTDEV}" /mnt
+[[ -d /mnt/@ ]] || { echo "Brak subwolumenu @ w /mnt — czy Calamares zakończył instalację?"; exit 1; }
+
+FSTAB="/mnt/@/etc/fstab"
+cp -a "${FSTAB}" "${FSTAB}.bkp.$(date +%s)"
+
+# Kompresja dla istniejących wpisów (@ i @home) — tylko jeśli brak compress
+if ! grep -q 'compress=zstd' "${FSTAB}"; then
+  sed -i '/[[:space:]]btrfs[[:space:]]/ s/\(subvol=[^ ,]*\)/\1,compress=zstd:1,noatime/' "${FSTAB}"
+fi
+
+# Tworzenie subwolumenów + przeniesienie danych + wpisy fstab
+for item in "${EXTRA_SUBVOLS[@]}"; do
+  sv="${item%%=*}"
+  p="${item#*=}"
+  if ! btrfs subvolume show "/mnt/${sv}" >/dev/null 2>&1; then
+    btrfs subvolume create "/mnt/${sv}"
+  fi
+  if [[ -d "/mnt/@/${p}" && ! -L "/mnt/@/${p}" ]]; then
+    cp -a --reflink=auto "/mnt/@/${p}/." "/mnt/${sv}/" 2>/dev/null || true
+    rm -rf "/mnt/@/${p}"
+  fi
+  mkdir -p "/mnt/@/${p}"
+  if ! grep -q "subvol=${sv}[ ,]" "${FSTAB}"; then
+    echo "UUID=${BTRFS_UUID} /${p} btrfs subvol=${sv},compress=zstd:1,noatime,x-systemd.device-timeout=0 0 0" >> "${FSTAB}"
+  fi
+done
+
+# Uprawnienia specjalne
+[[ -d /mnt/@var_tmp ]] && chmod 1777 /mnt/@var_tmp
+[[ -d /mnt/@root ]] && chmod 700 /mnt/@root
+
+echo ">> Docelowy /etc/fstab:"
+cat "${FSTAB}"
+
+# --- chroot: doinstaluj SSH do docelowego systemu ---
+echo ">> Instaluję openssh-server + avahi w docelowym systemie (chroot)..."
+mkdir -p /mnt2
+mount -o subvol=@,compress=zstd:1,noatime "${ROOTDEV}" /mnt2
+mount "${BOOTPART}" /mnt2/boot
+mount "${EFIPART}" /mnt2/boot/efi
+for d in dev dev/pts proc sys run; do mount --rbind "/${d}" "/mnt2/${d}"; done
+
+# DNS w chroot działa przez podmontowane /run (systemd-resolved z live).
+# Jeśli apt nie rozwiązuje nazw, odkomentuj poniższą linię:
+# echo 'nameserver 1.1.1.1' > /mnt2/etc/resolv.conf
+
+chroot /mnt2 apt-get update
+chroot /mnt2 apt-get install -y openssh-server avahi-daemon
+chroot /mnt2 systemctl enable ssh
+
+umount -R /mnt2
+umount -R /mnt
+cryptsetup close cryptroot
+
+echo
+echo ">> GOTOWE. Wyjmij USB i zrestartuj:  sudo systemctl reboot"
+echo ">> Po restarcie wejdziesz przez SSH do zainstalowanego systemu i uruchomisz 02..05."

@@ -1,0 +1,7 @@
+# Kopie zapasowe tworzone przez skrypty
+*.bkp
+*.bkp.*
+*.bak
+
+# Lokalne nadpisania konfiguracji
+config.local.sh
