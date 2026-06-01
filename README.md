@@ -29,9 +29,11 @@ Kompromis: jądro i initramfs w `/boot` nie są szyfrowane ani objęte rollbacki
 
 | Partycja | Rozmiar | FS | Montowanie | Szyfrowanie |
 |---|---|---|---|---|
-| p1 | 1 GiB | FAT32 (flaga `esp`) | `/boot/efi` | nie |
+| p1 | 1 GiB | FAT32 | `/boot/efi` | nie |
 | p2 | 2 GiB | ext4 | `/boot` | nie |
 | p3 | reszta | **Btrfs** | `/` | **LUKS2** |
+
+> ESP w Calamares (Kubuntu 26.04): nie ma flagi `esp` ani wyboru typu partycji. Po prostu ustaw **FAT32** i punkt montowania **`/boot/efi`** — instalator sam oznaczy ją jako partycję systemową EFI. (Jeśli kiedyś robisz to w `gdisk`/CLI, odpowiada to typowi `ef00`.)
 
 ## Subwolumeny Btrfs (wewnątrz LUKS2)
 
