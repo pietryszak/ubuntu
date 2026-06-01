@@ -12,15 +12,15 @@ EFIPART=""     # np. /dev/nvme0n1p1  (FAT32 -> /boot/efi)
 BOOTPART=""    # np. /dev/nvme0n1p2  (ext4  -> /boot)
 LUKSPART=""    # np. /dev/nvme0n1p3  (LUKS2 -> Btrfs)
 
-# --- Swap dla hibernacji (puste = 1.5×RAM, skrypt zapyta o potwierdzenie) ---
-# Wpisz np. "96g" aby wymusić rozmiar.
-SWAP_SIZE=""
+# --- Swap dla hibernacji (puste = 1.5×RAM i pyta; ustawione = bez pytania) ---
+# 96g: 64 GB RAM + zapas, z naddatkiem starcza na hibernację.
+SWAP_SIZE="96g"
 
 # --- TPM2: rejestry PCR (7 = stan Secure Boot) ---
 TPM2_PCRS="7"
 
-# --- Login docelowy (puste = $SUDO_USER) ---
-USERNAME=""
+# --- Login docelowy (puste = $SUDO_USER i pyta; ustawione = bez pytania) ---
+USERNAME="johndoe"
 
 # --- IP laptopa do SSH w hardeningu 07 (puste = wykryte z sesji SSH; "any" = bez ograniczeń) ---
 SSH_FROM=""
