@@ -3,10 +3,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 # shellcheck source=config.sh
 source "${SCRIPT_DIR}/config.sh"
 
-[[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 05-snapper-grub-btrfs.sh"; exit 1; }
+require_root
+
+# Login docelowy (do ALLOW_USERS w Snapperze)
+USERNAME="${USERNAME:-$(detect_target_user)}"
+ask USERNAME "Login użytkownika (zarządzanie snapshotami bez sudo)"
 
 apt-get update
 apt-get install -y snapper btrfs-assistant inotify-tools git make

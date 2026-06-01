@@ -10,17 +10,28 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 # shellcheck source=config.sh
 source "${SCRIPT_DIR}/config.sh"
 
-[[ $EUID -eq 0 ]] || { echo "Uruchom jako root: sudo bash 01-subvolumes.sh"; exit 1; }
+require_root
 
-echo ">> Dysk:   ${DISK}"
-echo ">> EFI:    ${EFIPART}"
-echo ">> /boot:  ${BOOTPART}"
-echo ">> LUKS:   ${LUKSPART}"
-read -rp "Czy te urządzenia są poprawne? Wpisz 'tak', aby kontynuować: " ans
-[[ "${ans}" == "tak" ]] || { echo "Przerwano."; exit 1; }
+# Auto-detekcja partycji (nadpisania z config.sh mają pierwszeństwo)
+LUKSPART="${LUKSPART:-$(detect_luks)}"
+[[ -n "${LUKSPART}" ]] || die "Nie znaleziono partycji LUKS (crypto_LUKS). Czy instalacja bazy się zakończyła?"
+DISK="${DISK:-$(parent_disk "${LUKSPART}")}"
+EFIPART="${EFIPART:-$(part_by_fstype "${DISK}" vfat)}"
+BOOTPART="${BOOTPART:-$(part_by_fstype "${DISK}" ext4)}"
+[[ -n "${DISK}" && -n "${EFIPART}" && -n "${BOOTPART}" ]] || \
+  die "Nie udało się wykryć wszystkich partycji. Ustaw je ręcznie w config.sh."
+
+echo ">> Wykryto:"
+echo "   Dysk:   ${DISK}"
+echo "   EFI:    ${EFIPART}"
+echo "   /boot:  ${BOOTPART}"
+echo "   LUKS:   ${LUKSPART}"
+confirm "Czy te urządzenia są poprawne? (dane na nich będą modyfikowane)" || die "Przerwano."
 
 swapoff -a 2>/dev/null || true
 umount -R /mnt 2>/dev/null || true

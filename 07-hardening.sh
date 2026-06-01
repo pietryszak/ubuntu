@@ -6,10 +6,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 # shellcheck source=config.sh
 source "${SCRIPT_DIR}/config.sh"
 
-[[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 07-hardening.sh"; exit 1; }
+require_root
+
+# Login docelowy + IP, z którego dopuszczamy SSH (wykryte z sesji SSH)
+USERNAME="${USERNAME:-$(detect_target_user)}"
+ask USERNAME "Login użytkownika (AllowUsers w SSH)"
+SSH_FROM="${SSH_FROM:-$(detect_ssh_from)}"
+ask SSH_FROM "IP laptopa do SSH (lub 'any' = bez ograniczeń)" "any"
 
 apt-get update
 apt-get install -y openssh-server ufw

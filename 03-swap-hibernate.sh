@@ -3,14 +3,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 # shellcheck source=config.sh
 source "${SCRIPT_DIR}/config.sh"
 
-[[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 03-swap-hibernate.sh"; exit 1; }
+require_root
+
+# Login docelowy (do reguły hibernacji w polkit)
+USERNAME="${USERNAME:-$(detect_target_user)}"
+ask USERNAME "Login użytkownika (do reguły hibernacji)"
+
+# Rozmiar swap: domyślnie 1.5×RAM (best practice dla hibernacji)
+ask SWAP_SIZE "Rozmiar swapfile dla hibernacji (np. 96g)" "$(suggested_swap_gib)g"
 
 ROOTDEV="$(findmnt -no SOURCE / | sed 's/\[.*//')"
 BTRFS_UUID="$(findmnt -no UUID /)"
-echo ">> root dev: ${ROOTDEV}   Btrfs UUID: ${BTRFS_UUID}   swap: ${SWAP_SIZE}"
+echo ">> root dev: ${ROOTDEV}   Btrfs UUID: ${BTRFS_UUID}   swap: ${SWAP_SIZE}   user: ${USERNAME}"
 
 # Subwolumen @swap (niezagnieżdżony, przeżywa rollbacki)
 mount -o subvolid=5 "${ROOTDEV}" /mnt

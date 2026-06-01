@@ -3,13 +3,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 # shellcheck source=config.sh
 source "${SCRIPT_DIR}/config.sh"
 
-[[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 02-tpm2.sh"; exit 1; }
+require_root
 
-LUKS="$(blkid -t TYPE=crypto_LUKS -o device | head -1)"
-[[ -n "${LUKS}" ]] || { echo "Nie znaleziono partycji LUKS."; exit 1; }
+LUKS="${LUKSPART:-$(detect_luks)}"
+[[ -n "${LUKS}" ]] || die "Nie znaleziono partycji LUKS."
 echo ">> Partycja LUKS: ${LUKS}"
 
 # Moduł TPM2 w dracut
