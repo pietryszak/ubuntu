@@ -15,7 +15,10 @@ USERNAME="${USERNAME:-$(detect_target_user)}"
 ask USERNAME "Login użytkownika (zarządzanie snapshotami bez sudo)"
 
 apt-get update
-apt-get install -y snapper btrfs-assistant inotify-tools git make
+# gawk: grub-btrfs używa w awk regexa \s (PCRE), którego domyślny mawk NIE obsługuje
+# -> "UUID of the root subvolume is not available". gawk go obsługuje. (issue Antynea #220)
+apt-get install -y snapper btrfs-assistant inotify-tools git make gawk
+update-alternatives --set awk /usr/bin/gawk 2>/dev/null || true
 
 # Konfiguracje Snappera (tworzą /.snapshots i /home/.snapshots)
 snapper get-config root >/dev/null 2>&1 || snapper -c root create-config /
@@ -36,11 +39,18 @@ chmod 750 /home/.snapshots 2>/dev/null || true
 
 systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
-# Automatyczne snapshoty pre/post przy operacjach apt
+# Automatyczne snapshoty pre/post przy operacjach apt.
+# UWAGA: w apt.conf wartość jest w "...", więc NIE wolno zagnieżdżać podwójnych
+# cudzysłowów (apt: "Extra junk after value"). Numer snapshotu to liczba — bez cudzysłowów.
 cat > /etc/apt/apt.conf.d/80snapper <<'EOF'
-DPkg::Pre-Invoke  { "if command -v snapper >/dev/null; then snapper -c root create -t pre  -c number -p -d 'apt' >/var/lib/snapper/apt-pre 2>/dev/null || true; fi"; };
-DPkg::Post-Invoke { "if command -v snapper >/dev/null; then snapper -c root create -t post -c number --pre-number \"$(cat /var/lib/snapper/apt-pre 2>/dev/null)\" -d 'apt' 2>/dev/null || true; fi"; };
+DPkg::Pre-Invoke  { "if command -v snapper >/dev/null; then snapper -c root create -t pre -c number -p -d 'apt' >/run/snapper-apt-pre 2>/dev/null || true; fi"; };
+DPkg::Post-Invoke { "if command -v snapper >/dev/null; then snapper -c root create -t post -c number --pre-number $(cat /run/snapper-apt-pre 2>/dev/null) -d 'apt' 2>/dev/null || true; fi"; };
 EOF
+
+# Walidacja składni apt.conf OD RAZU — błędny hak wywala apt_pkg.init(), a to z kolei
+# psuje grub-sort-version (10_linux) i update-grub buduje grub.cfg BEZ wpisów kernela
+# (zostaje samo memtest). Lepiej wykryć to teraz niż po reboocie.
+apt-config dump >/dev/null 2>&1 || die "Błąd składni w /etc/apt/apt.conf.d/80snapper — popraw, zanim ruszysz dalej."
 
 # grub-btrfs: bootowanie snapshotów z menu GRUB
 if [[ ! -d /tmp/grub-btrfs ]]; then
@@ -49,6 +59,12 @@ fi
 make -C /tmp/grub-btrfs install
 systemctl enable --now grub-btrfsd
 update-grub
+
+# Guard: upewnij się, że w grub.cfg SĄ wpisy kernela Kubuntu (nie tylko memtest).
+# Gdyby ich nie było, reboot wpadłby prosto w memtest — przerywamy z jasnym komunikatem.
+if ! grep -q "vmlinuz" /boot/grub/grub.cfg; then
+  die "UWAGA: /boot/grub/grub.cfg nie zawiera wpisów kernela (vmlinuz)! NIE RESTARTUJ. Sprawdź apt.conf/update-grub."
+fi
 
 echo ">> Snapper + grub-btrfs + Btrfs Assistant gotowe."
 echo ">> Test: 'sudo apt install htop' -> powinny powstać snapshoty pre/post (snapper -c root list)."
