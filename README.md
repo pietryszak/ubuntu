@@ -147,6 +147,34 @@ Weryfikacja:
 bash 99-verify.sh
 ```
 
+### Etap 4 — [laptop] Klucz SSH (logowanie bez hasła)
+
+Po `07-hardening.sh` SSH jest ograniczone do IP laptopa, ale wciąż na hasło.
+Wgraj klucz publiczny i dopiero **potem** wyłącz logowanie hasłem.
+
+Na **laptopie** (`192.168.1.249`):
+
+```bash
+# 1. Wygeneruj klucz — POMIŃ, jeśli masz już ~/.ssh/id_ed25519:
+ssh-keygen -t ed25519 -C "johndoe@laptop"     # Enter x3 (lub ustaw passphrase)
+
+# 2. Wgraj klucz publiczny na PC (poprosi RAZ o hasło użytkownika):
+ssh-copy-id johndoe@<IP_PC>
+
+# 3. Sprawdź, że wchodzi bez hasła:
+ssh johndoe@<IP_PC>
+```
+
+Gdy logowanie kluczem działa, **na PC** wyłącz hasła (zostaje tylko klucz):
+
+```bash
+sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' \
+  /etc/ssh/sshd_config.d/99-hardening.conf && sudo systemctl restart ssh
+```
+
+> `<IP_PC>` sprawdzisz na PC: `ip -4 a` (albo łącz się przez `johndoe@kubuntu.local`, jeśli avahi działa).
+> Nie wyłączaj hasła, zanim klucz nie zadziała — inaczej odetniesz sobie SSH (zostanie tylko logowanie lokalne na PC).
+
 ---
 
 ## Kolejność skryptów (skrót)
