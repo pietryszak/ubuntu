@@ -41,6 +41,28 @@ else
   PCR_BANK="${TPM2_PCR_BANK:-sha256}"
   clevis luks bind -d "${LUKS}" tpm2 "{\"pcr_bank\":\"${PCR_BANK}\",\"pcr_ids\":\"${TPM2_PCRS}\"}"
   echo ">> Zapisane tokeny LUKS:"; clevis luks list -d "${LUKS}" || true
+
+  # --- Drobne usprawnienia bootu (opcjonalne, nieszkodliwe) ---
+  # UWAGA: w praktyce widoczny monit o hasło na kilka sekund wynika z czasu
+  # initramfs (udev/enumeracja urządzeń, init fTPM) oraz POST firmware, a NIE
+  # z entropii. Sam clevis+TPM to ~1.4 s. Poniższe to dobre domyślne, ale nie
+  # gwarantują zniknięcia monitu — na wolnym fTPM AMD kilka sekund jest normą.
+  # 1) Wczesne wczytanie sterownika TPM w initramfs.
+  for m in tpm_tis tpm_crb; do
+    grep -qxF "$m" /etc/initramfs-tools/modules 2>/dev/null || echo "$m" >> /etc/initramfs-tools/modules
+  done
+  # 2) Entropia z CPU (RDRAND) — rozsądne domyślne na wczesny boot.
+  #    Wpisujemy do GRUB_CMDLINE_LINUX (działa niezależnie od ' lub " w pliku).
+  if ! grep -q 'random.trust_cpu=on' /etc/default/grub; then
+    cp -a /etc/default/grub "/etc/default/grub.bkp.$(date +%s)"
+    if grep -q '^GRUB_CMDLINE_LINUX=' /etc/default/grub; then
+      sed -i -E "s/^(GRUB_CMDLINE_LINUX=)([\"'])(.*)\2/\1\2\3 random.trust_cpu=on\2/" /etc/default/grub
+    else
+      echo 'GRUB_CMDLINE_LINUX="random.trust_cpu=on"' >> /etc/default/grub
+    fi
+    update-grub
+  fi
+
   update-initramfs -u -k all
 fi
 
