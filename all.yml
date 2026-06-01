@@ -1,0 +1,1494 @@
+---
+
+- name: Playbook for all computers
+  hosts: all
+
+  tasks:
+
+#############################################################################################################
+
+# Ansible config, variables
+
+#############################################################################################################
+
+# Username of regular username
+# https://stackoverflow.com/a/58916467
+
+    - name: Run whoami without become for regular username
+      ansible.builtin.command: whoami
+      changed_when: false
+      become: false
+      register: whoami
+
+    - name: Set a fact with the username
+      ansible.builtin.set_fact:
+        login_user: "{{ whoami.stdout }}"
+
+  # Cpu family
+  # https://stackoverflow.com/a/41610564
+
+    - name: Check CPU family
+      ansible.builtin.debug:
+        msg: "{{ ansible_processor[1] }}"
+      register: cpu_family
+      no_log: true
+
+    - name: Export variable for installation packet without popup
+      ansible.builtin.shell: |
+        export DEBIAN_FRONTEND=noninteractive
+      changed_when: true
+
+  #############################################################################################################
+
+  # Drivers
+
+  #############################################################################################################
+
+  # Linux firmware
+
+    - name: Install Drivers
+      become: true
+      block:
+        - name: Install Linux firmware, ubuntu drivers
+          ansible.builtin.apt:
+            pkg:
+              - linux-firmware
+              - ubuntu-drivers-common
+            update_cache: true
+
+        - name: Autoinstall discovered ubuntu drivers
+          ansible.builtin.shell: |
+            ubuntu-drivers autoinstall
+          changed_when: true
+
+  # Xorg
+
+    - name: Install Xorg
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - xorg
+
+  # Pulseaudio audio drivers
+
+    - name: Install sound drivers
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - alsa-base
+          - alsa-topology-conf
+          - alsa-tools
+          - alsa-ucm-conf
+          - pulseaudio
+          - pulseaudio-utils
+          - pulseaudio-module-bluetooth
+          - pavucontrol
+
+
+  # Exfatprogs - tool to create, check and label exFAT filesystems
+
+    - name: Install Exfatprogs - tool to create, check and label exFAT filesystems
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - exfatprogs
+
+  # Install unarchiver
+
+    - name: Install unarchiver
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - unzip
+          - zstd
+          - tar
+          - p7zip-full
+          - p7zip-rar
+
+  #############################################################################################################
+
+  # Grub - startup app + Lightdm - login app
+
+  #############################################################################################################
+
+  # GRUB
+  # https://github.com/AdisonCavani/distro-grub-themes
+
+    - name: Grub look theme
+      ansible.builtin.git:
+        repo: https://github.com/AdisonCavani/distro-grub-themes.git
+        dest: ~/.gc/distro-grub-themes
+        version: master
+
+    - name: Create a folder for unarchive grub theme
+      ansible.builtin.file:
+        path: ~/.gc/distro-grub-themes/themes/ubuntu/
+        state: directory
+        mode: '0744'
+
+    - name: Unzip grub theme
+      ansible.builtin.unarchive:
+        src: ~/.gc/distro-grub-themes/themes/ubuntu.tar
+        dest: ~/.gc/distro-grub-themes/themes/ubuntu/
+
+    - name: Install grub theme and plymouth theme, configure it
+      become: true
+      block:
+
+        - name: Create a folder for grub theme
+          ansible.builtin.file:
+            path: /boot/grub/themes/
+            state: directory
+            mode: '0744'
+
+        - name: Copy grub theme to grub folder
+          ansible.builtin.copy:
+            src: ~/.gc/distro-grub-themes/themes/ubuntu/
+            dest: /boot/grub/themes
+            mode: '0644'
+
+        - name: Adjust grub display resolution, display time, timeout style
+          ansible.builtin.lineinfile:
+            backup: true
+            path: /etc/default/grub
+            regexp: "{{ item.regexp }}"
+            line: "{{ item.line }}"
+          loop:
+            - {regexp: '#GRUB_GFXMODE=640x480', line: 'GRUB_GFXMODE=2560x1440'}
+            - {regexp: 'GRUB_TIMEOUT=0', line: 'GRUB_TIMEOUT=4'}
+            - {regexp: 'GRUB_TIMEOUT_STYLE=hidden', line: 'GRUB_TIMEOUT_STYLE=menu'}
+
+        - name: Adjust grub splash screen
+          ansible.builtin.lineinfile:
+            path: /etc/default/grub
+            regexp: 'GRUB_CMDLINE_LINUX_DEFAULT=""'
+            line: GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 splash"
+
+        - name: Add path of theme to grub configure
+          ansible.builtin.blockinfile:
+            path: /etc/default/grub
+            block: |
+
+              # Ubuntu grub theme
+              GRUB_THEME=/boot/grub/themes/theme.txt
+
+        - name: Hide any kernel messages from the console
+          ansible.builtin.blockinfile:
+            path: /etc/sysctl.d/20-quiet-printk.conf
+            mode: '0644'
+            create: true
+            block: |
+
+              # Hide any kernel messages from the console
+              kernel.printk = 3 3 3 3
+
+        - name: Update Grub config file
+          ansible.builtin.shell: |
+            update-grub2
+
+          changed_when: true
+
+        - name: Install a plymouth (splash screen) theme
+          ansible.builtin.apt:
+            pkg:
+              - plymouth-themes
+
+        - name: Update initial ramfs for new plymouth theme
+          ansible.builtin.shell: |
+            update-initramfs -u
+
+          changed_when: true
+
+  # Lightdm Display Manager
+
+    - name: Install Lightdm
+      become: true
+      block:
+
+        - name: Install a lightdm dependencies
+          ansible.builtin.apt:
+            pkg:
+              - lightdm
+              - lightdm-gtk-greeter
+              - lightdm-gtk-greeter-settings
+
+        - name: Enable lightdm service
+          ansible.builtin.systemd:
+            name: lightdm.service
+            enabled: true
+
+  #############################################################################################################
+
+  # Zsh + oh-my-zsh for user instead bash
+
+  #############################################################################################################
+
+  # Zsh for user instead bash
+
+    - name: Install zsh
+      become: true
+      block:
+
+        - name: Install Zsh for user instead bash
+          ansible.builtin.apt:
+            pkg:
+              - zsh
+
+        - name: Set zsh as default to user instead bash
+          ansible.builtin.user:
+            name: "{{ login_user }}"
+            shell: /bin/zsh
+
+    - name: Create a directory for oh-my-zsh installation script
+      ansible.builtin.file:
+        path: ~/.gc/ohmyzsh/
+        state: directory
+        mode: '0744'
+
+    - name: Download oh-my-zsh
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh
+        dest: ~/.gc/ohmyzsh/install.sh
+        mode: '0744'
+
+    - name: Check that oh-my-zsh is installed
+      ansible.builtin.stat:
+        path: ~/.oh-my-zsh
+      register: zsh_installation_status
+
+    - name: Install oh-my-zsh
+      ansible.builtin.shell: |
+        sh -c "~/.gc/ohmyzsh/install.sh" --unattended
+      when:
+        not zsh_installation_status.stat.exists
+      changed_when: true
+
+  # Zsh plugins
+
+    - name: Install zsh autosuggestions plugin
+      ansible.builtin.git:
+        repo: https://github.com/zsh-users/zsh-autosuggestions
+        dest: ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions
+        version: master
+
+
+    - name: Install zsh syntax highlighting plugin
+      ansible.builtin.git:
+        repo: https://github.com/zsh-users/zsh-syntax-highlighting.git
+        dest: ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting
+        version: master
+
+    - name: Install zsh completions plugin
+      ansible.builtin.git:
+        repo: https://github.com/zsh-users/zsh-completions
+        dest: ~/.oh-my-zsh/custom/plugins/zsh-completions
+        version: master
+
+    # Powerlevel10k zsh
+
+    - name: Install powerlevel10k theme for zsh
+      ansible.builtin.git:
+        repo: https://github.com/romkatv/powerlevel10k.git
+        dest: ~/.oh-my-zsh/custom/themes/powerlevel10k
+        depth: 1
+        version: master
+
+  # Fzf - A command-line fuzzy finder
+  # https://github.com/junegunn/fzf
+
+    - name: Install Fzf - A command-line fuzzy finder for faster searching
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - fzf
+
+  #############################################################################################################
+
+  # i3 + things connected to i3
+
+  #############################################################################################################
+
+  # i3
+  # https://stackoverflow.com/a/73805885
+
+    - name: Install i3
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - i3
+        update_cache: true
+
+  # Polybar - status bar for i3
+
+    - name: Install polybar status bar
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - polybar
+
+  # Volumeicon - a volume icon for i3
+
+    - name: Install volumeicon a volume icon for i3
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - volumeicon-alsa
+
+  # Rofi - A window switcher, application launcher
+  # https://github.com/davatorium/rofi
+
+    - name: Install rofi application launcher
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - rofi
+
+  # Picom - A lightweight compositor for X11
+  # https://github.com/yshui/picom
+
+    - name: Install picom compositor for x11
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - picom
+
+  # Dunst - Lightweight and customizable notification daemon
+  # https://github.com/dunst-project/dunst
+
+    - name: Install dunst notification daemon
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - dunst
+
+  # Yad - dialog app for calendar in i3
+  # https://github.com/v1cont/yad
+
+    - name: Install dependiences of yad dialog app for calendar in i3
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - xdotool
+
+    - name: Install yad dialog app for calendar in i3
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - yad
+
+  # Numlockx - numlock on at startup i3
+
+    - name: Install numlockx for numlock on startup
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - numlockx
+
+  # Arandr - screen layout
+
+    - name: Install arandr for screen layout
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - arandr
+
+  # Feh for i3 wallpapers
+
+    - name: Install Feh - i3 wallpapers
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - feh
+
+  # Playerctl for i3 media control
+  # https://github.com/altdesktop/playerctl
+
+    - name: Install Playerctl for i3 media control
+
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - playerctl
+
+  # Copyq for i3 clipboard managment
+
+    - name: Install Clipboard
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - copyq
+
+  # Gnome-polkit - display popup fot password for sudo in i3
+
+    - name: Install Playerctl for i3 media control
+
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - policykit-1-gnome
+
+  #############################################################################################################
+
+  # Security
+
+  #############################################################################################################
+
+  # ClamAV is an open-source and free antivirus software toolkit
+  # https://aaronbrighton.medium.com/installation-configuration-of-clamav-antivirus-on-ubuntu-18-04-a6416bab3b41
+  # https://betatim.github.io/posts/clamav-memory-usage/
+
+    - name: Install Clamav antivirus
+      become: true
+      block:
+
+        - name: Install Clamav - open-source and free antivirus software toolkit
+          ansible.builtin.apt:
+            pkg:
+              - clamav
+              - clamtk
+
+        - name: Stop the clamav-freshclam service before update
+          ansible.builtin.systemd:
+            name: clamav-freshclam
+            state: stopped
+
+        - name: Update antivirus database
+          ansible.builtin.shell: |
+            freshclam
+          changed_when: true
+
+        - name: Start the clamav-freshclam service after update
+          ansible.builtin.systemd:
+            name: clamav-freshclam
+            state: started
+
+  # UFW firewall
+    - name: Install firewall
+      become: true
+      block:
+
+        - name: Install gufw firewall gui
+          ansible.builtin.apt:
+            pkg:
+              - gufw
+
+        - name: Allow outgoing policy
+          community.general.ufw:
+            state: enabled
+            logging: 'on'
+            direction: outgoing
+            policy: allow
+
+  #############################################################################################################
+
+  # Flathub
+
+  #############################################################################################################
+  # https://ubuntuhandbook.org/index.php/2022/04/remove-snap-block-ubuntu-2204/
+  # https://onlinux.systems/guides/20220524_how-to-disable-and-remove-snap-on-ubuntu-2204
+  # https://gist.github.com/tyrells/0a79681de339237cb04c?permalink_comment_id=3668310#gistcomment-3668310
+
+    - name: Disable unnecessary snap
+      become: true
+      block:
+
+        - name: Remove lxd snap
+          community.general.snap:
+            name: "{{ item }}"
+            state: absent
+          register: unused_snaps
+          failed_when: "unused_snaps is failed and ('find' not in unused_snaps.msg and 'found' not in unused_snaps.msg)"
+          with_items:
+            - lxd
+
+        - name: Pause for 15 senonds to avoid snap remove issue
+          ansible.builtin.pause:
+            seconds: 15
+
+        - name: Remove snap core
+          community.general.snap:
+            name: "{{ item }}"
+            state: absent
+          register: unused_snaps
+          failed_when: "unused_snaps is failed and ('find' not in unused_snaps.msg and 'found' not in unused_snaps.msg)"
+          with_items:
+            - core22
+
+        - name: Remove snap snapd
+          community.general.snap:
+            name: "{{ item }}"
+            state: absent
+          register: unused_snaps
+          failed_when: "unused_snaps is failed and ('find' not in unused_snaps.msg and 'found' not in unused_snaps.msg)"
+          with_items:
+            - snapd
+
+        - name: Stop and disable unused snap services
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: stopped
+            enabled: false
+          register: unused_disable
+          failed_when: "unused_disable is failed and ('find' not in unused_disable.msg and 'found' not in unused_disable.msg)"
+          with_items:
+            - snapd.service
+            - snapd.socket
+            - snapd.seeded.service
+
+        - name: Purge or remove completely snapd
+          ansible.builtin.shell: |
+            apt autoremove --purge snapd -y
+          changed_when: true
+
+        - name: Delete any leftover snap cached data
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          with_items:
+            - ~/snap
+            - /snap
+            - /var/snap
+            - /var/lib/snapd
+            - /var/cache/snapd/
+            - /root/snap
+
+        - name: Create file with apt snap settings to avoid install
+          ansible.builtin.file:
+            path: /etc/apt/preferences.d/nosnap.pref
+            state: touch
+            mode: u=rw,g=r,o=r
+
+        - name: Set snap priority to avoid install in future
+          ansible.builtin.blockinfile:
+            path: /etc/apt/preferences.d/nosnap.pref
+            block: |
+              Package: snapd
+              Pin: release a=*
+              Pin-Priority: -10
+
+    - name: Enable flatpak
+      become: true
+      block:
+        - name: Install flatpak
+          ansible.builtin.apt:
+            pkg:
+              - flatpak
+
+        - name: Enable the Flathub - a popular destination for searching the application
+          ansible.builtin.shell: |
+            flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          changed_when: true
+
+  #############################################################################################################
+
+  # Apps
+
+  #############################################################################################################
+
+  # Ubuntu restricted extras
+
+    - name: Install Ubuntu restricted extras
+      become: true
+      block:
+
+        - name: Prepare eula for microsoft fonts on Ubuntu
+          ansible.builtin.debconf:
+            name: ttf-mscorefonts-installer
+            question: msttcorefonts/accepted-mscorefonts-eula
+            vtype: select
+            value: "'true'"
+
+        - name: Install Ubuntu restricted extras
+          ansible.builtin.apt:
+            pkg:
+              - ubuntu-restricted-extras
+
+  # FFmpeg
+
+    - name: Install ffmpeg video and audio codecs
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - ffmpeg
+
+  # Intel specific video accelaraion
+
+    - name: Install Intel(R) Media Driver Video Acceleration if Intel CPU exist
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - intel-media-va-driver-non-free
+      when: cpu_family.msg == "GenuineIntel"
+
+  # Vscode
+
+    - name: Install Vscode
+      become: true
+      block:
+
+        - name: Download Vscode public key
+          ansible.builtin.get_url:
+            url: https://packages.microsoft.com/keys/microsoft.asc
+            dest: /etc/apt/keyrings/microsoft.asc
+            mode: '0644'
+
+        - name: Add Vscode gpg key
+          ansible.builtin.shell: |
+            gpg --dearmor < /etc/apt/keyrings/microsoft.asc > /etc/apt/keyrings/microsoft.gpg
+            install -D -o root -g root -m 644 /etc/apt/keyrings/microsoft.gpg /etc/apt/trusted.gpg.d/packages.microsoft.gpg
+          changed_when: true
+
+        - name: Add Vscode to sources list
+          ansible.builtin.apt_repository:
+            repo: deb [arch=amd64] https://packages.microsoft.com/repos/code stable main
+            state: present
+            filename: vscode
+
+        - name: Install Vscode
+          ansible.builtin.apt:
+            pkg:
+              - code
+            update_cache: true
+
+    - name: Install Vscode extensions ( takes time, please wait )
+      ansible.builtin.shell: |
+        # AI-assisted development etension
+        code --install-extension visualstudioexptteam.vscodeintellicode
+
+        # Code formatter
+        code --install-extension esbenp.prettier-vscode
+
+        # Python extension
+        code --install-extension ms-python.python
+
+        # Ansible extensions
+        code --install-extension redhat.vscode-xml
+        code --install-extension redhat.vscode-yaml
+
+        # Docker extension
+        code --install-extension ms-azuretools.vscode-docker
+
+        # Git extension
+        code --install-extension eamodio.gitlens
+
+        # Bookmarks extension
+        code --install-extension alefragnani.Bookmarks
+
+        # Terraform extension
+        code --install-extension hashicorp.terraform
+
+        # Vim Script language extension
+        code --install-extension xadillax.viml
+
+        # Highlight web colors extension
+        code --install-extension naumovs.color-highlight
+
+        # Support for .desktop files extension
+        code --install-extension nico-castell.linux-desktop-file
+
+        # Rofi theme language support extension
+        code --install-extension dlasagno.rasi
+
+        # Syntax definition for the i3wm configuration file extension
+        code --install-extension dcasella.i3
+
+        # Themes
+        code --install-extension sainnhe.gruvbox-material
+        code --install-extension jonathanharty.gruvbox-material-icon-theme
+      changed_when: true
+
+  # Neovim
+  # https://github.com/neovim/neovim
+
+    - name: Install neovim
+      become: true
+      block:
+
+        - name: Add neovim ppa
+          ansible.builtin.shell: |
+            add-apt-repository --yes ppa:neovim-ppa/unstable
+          changed_when: true
+
+        - name: Install neovim
+          ansible.builtin.apt:
+            pkg:
+              - neovim
+            update_cache: true
+
+  # Micro better nano editor
+
+    - name: Install Micro better nano editor
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - micro
+
+  # Bat
+  # https://github.com/sharkdp/bat
+
+    - name: Install bat - a cat clone with syntax highlighting and Git integration
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - bat
+
+    - name: Make folder for bat
+      ansible.builtin.file:
+        path: ~/.local/bin
+        state: directory
+        mode: '0744'
+
+    - name: Add bat symbolic link
+      ansible.builtin.file:
+        src: /usr/bin/batcat
+        dest: ~/.local/bin/bat
+        state: link
+
+  # Ripgrep
+  # https://github.com/BurntSushi/ripgrep
+
+    - name: Install ripgrep - a search tool that recursively searches the current directory for a regex pattern
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - ripgrep
+
+  # Most
+    - name: Install most - man help pager
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - most
+
+  # Neofetch
+  # https://github.com/dylanaraps/neofetch
+
+    - name: Install neofetch a command-line system information tool
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - neofetch
+
+  # Sensors for cpu temperature
+
+    - name: Install and detect sensors for cpu temperature
+      become: true
+      block:
+
+        - name: Install Sensors for cpu temperature
+          ansible.builtin.apt:
+            pkg:
+              - lm-sensors
+
+        - name: Detect Sensors
+          ansible.builtin.shell: |
+            yes | sensors-detect
+          changed_when: true
+
+  # Btop
+  # https://github.com/aristocratos/btop
+
+    - name: Install btop a monitor of resources with mouse support
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - btop
+
+  # Firefox
+  # https://ubuntuhandbook.org/index.php/2022/04/install-firefox-deb-ubuntu-22-04/
+
+    - name: Install firefox
+      become: true
+      block:
+
+        - name: Add firefox ppa
+          ansible.builtin.shell: |
+            add-apt-repository --yes ppa:mozillateam/ppa
+          changed_when: true
+
+        - name: Create files with apt firefox settings
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: touch
+            mode: u=rw,g=r,o=r
+          with_items:
+            - /etc/apt/preferences.d/mozilla-firefox
+            - /etc/apt/apt.conf.d/51unattended-upgrades-firefox
+
+        - name: Set firefox ppa priority
+          ansible.builtin.blockinfile:
+            path: /etc/apt/preferences.d/mozilla-firefox
+            block: |
+              Package: firefox*
+              Pin: release o=LP-PPA-mozillateam
+              Pin-Priority: 1001
+
+              Package: firefox*
+              Pin: release o=Ubuntu*
+              Pin-Priority: -1
+
+        - name: Unattended firefox upgrades
+          ansible.builtin.blockinfile:
+            path: /etc/apt/apt.conf.d/51unattended-upgrades-firefox
+            block: |
+              Unattended-Upgrade::Allowed-Origins:: "LP-PPA-mozillateam:${distro_codename}";
+
+        - name: Install firefox
+          ansible.builtin.apt:
+            pkg:
+              - firefox
+            update_cache: true
+
+  # Vivaldi browser
+
+    - name: Install Vivaldi borwser
+      become: true
+      block:
+
+        - name: Download Vivaldi browser public key
+          ansible.builtin.get_url:
+            url: https://repo.vivaldi.com/archive/linux_signing_key.pub
+            dest: /etc/apt/keyrings/vivaldi_linux_signing_key.pub
+            mode: '0644'
+
+        - name: Add Vivaldi gpg key
+          ansible.builtin.shell: |
+            gpg --dearmor < /etc/apt/keyrings/vivaldi_linux_signing_key.pub > /etc/apt/keyrings/vivaldi.gpg
+            install -D -o root -g root -m 644 /etc/apt/keyrings/vivaldi.gpg /etc/apt/trusted.gpg.d/packages.vivaldi.gpg
+          changed_when: true
+
+        - name: Add Vivaldi to sources list
+          ansible.builtin.apt_repository:
+            repo: deb [arch=amd64] https://repo.vivaldi.com/archive/deb/ stable main
+            state: present
+            filename: vivaldi
+
+        - name: Install Vivaldi browser
+          ansible.builtin.apt:
+            pkg:
+              - vivaldi-stable
+            update_cache: true
+
+  # Flameshot
+  # https://github.com/flameshot-org/flameshot
+
+    - name: Install flameshot
+
+      block:
+
+        - name: Install flameshot - screenshots tool
+          become: true
+          ansible.builtin.apt:
+            pkg:
+              - flameshot
+
+        - name: Create folder for flameshot screenshots
+          ansible.builtin.file:
+            path: ~/Pictures/screenshots
+            state: directory
+            mode: '0744'
+
+  # Terminator terminal
+
+    - name: Install Terminator terminal
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - terminator
+
+  # Gnome calculator
+
+    - name: Install gnome calculator
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - gnome-calculator
+
+  # Nemo file manager
+
+    - name: Install nemo file manager end extensions
+      become: true
+      block:
+
+        - name: Add nemo file manager ppa
+          ansible.builtin.shell: |
+            add-apt-repository --yes ppa:ubuntubudgie/backports
+          changed_when: true
+
+        - name: Install Nemo file manager
+          ansible.builtin.apt:
+            pkg:
+              - nemo
+              - nemo-fileroller
+              - nemo-preview
+            update_cache: true
+
+  # NNN - terminal file manager
+  # https://github.com/jarun/nnn
+
+    - name: Install NNN - terminal file manager
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - nnn
+
+  # Filezilla - FTP files manager
+
+    - name: Install Filezilla - FTP files manager
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - filezilla
+
+  # Github Desktop
+
+    - name: Install Github Desktop
+      become: true
+      block:
+
+        - name: Download Github Desktop public key
+          ansible.builtin.get_url:
+            url: https://mirror.mwt.me/shiftkey-desktop/gpgkey
+            dest: /etc/apt/keyrings/shiftkey-desktop.asc
+            mode: '0644'
+
+        - name: Add Github Desktop gpg key
+          ansible.builtin.shell: |
+            gpg --dearmor < /etc/apt/keyrings/shiftkey-desktop.asc > /etc/apt/keyrings/shiftkey-desktop.gpg
+            install -D -o root -g root -m 644 /etc/apt/keyrings/shiftkey-desktop.gpg /etc/apt/trusted.gpg.d/shiftkey-desktop.gpg
+          changed_when: true
+
+        - name: Add Github Desktop to sources list
+          ansible.builtin.apt_repository:
+            repo: deb [arch=amd64] https://mirror.mwt.me/shiftkey-desktop/deb/ any main
+            state: present
+            filename: packagecloud-shiftkey-desktop
+
+        - name: Install Github Desktop
+          ansible.builtin.apt:
+            pkg:
+              - github-desktop
+            update_cache: true
+
+  #############################################################################################################
+
+  # Look
+
+  #############################################################################################################
+
+    - name: Download fonts
+      ansible.builtin.git:
+        repo: https://github.com/pietryszak/fonts.git
+        dest: ~/.gc/fonts
+        version: main
+
+    - name: Copy fonts to proper folder
+      become: true
+      ansible.builtin.copy:
+        src: ~/.gc/fonts/
+        dest: /usr/share/fonts/
+        mode: '0755'
+
+    - name: Update fonts cache
+      ansible.builtin.shell: |
+        fc-cache -fv
+      changed_when: true
+
+  # GTK theme
+    - name: Download GTK theme required packets
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - gtk2-engines-murrine
+
+    - name: Download GTK theme
+      ansible.builtin.git:
+        repo: https://github.com/pietryszak/gruvbox-material-gtk.git
+        dest: ~/.gc/gruvbox-material-gtk
+        version: master
+
+    - name: Copy theme and cursors to proper folders
+      become: true
+      block:
+
+        - name: Copy GTK theme for flatpak to proper folder ( takes time, please wait )
+          ansible.builtin.copy:
+            src: ~/.gc/gruvbox-material-gtk/themes/
+            dest: /usr/share/themes/
+            mode: '0755'
+
+        - name: Copy cursor theme to proper folder
+          ansible.builtin.copy:
+            src: ~/.gc/gruvbox-material-gtk/cursors/
+            dest: /usr/share/icons/
+            mode: '0755'
+
+    - name: Copy GTK theme to proper folder ( takes time, please wait )
+      ansible.builtin.copy:
+        src: ~/.gc/gruvbox-material-gtk/themes/
+        dest: ~/.themes
+        mode: '0755'
+
+  # Set GTK theme
+
+    - name: Set default GTK theme
+      become: true
+      block:
+
+        - name: Set GTK theme for flatpak Apps
+          ansible.builtin.shell: |
+            flatpak override --filesystem=$HOME/.themes
+            flatpak override --env=GTK_THEME=Gruvbox-Material-Dark
+          changed_when: true
+
+        - name: Set GTK theme to profile settings
+          ansible.builtin.blockinfile:
+            path: /etc/environment
+            block: |
+
+              # Default GTK theme
+              GTK_THEME=Gruvbox-Material-Dark
+
+  # QT 5 theme
+
+    - name: Set default QT theme
+      become: true
+      block:
+
+        - name: Download Qt5ct for set theme for QT apps
+          ansible.builtin.apt:
+            pkg:
+              - qt5ct
+              - qt5-style-plugins
+
+        - name: Set QT theme to profile settings
+          ansible.builtin.blockinfile:
+            path: /etc/environment
+            block: |
+
+              # Default QT theme
+              QT_QPA_PLATFORMTHEME=qt5ct
+
+  # Papirus icons for gruvbox
+
+    - name: Install Papirus icons for gruvbox
+      become: true
+      block:
+
+        - name: Add Papirus icons ppa
+          ansible.builtin.shell: |
+            add-apt-repository --yes ppa:papirus/papirus
+          changed_when: true
+
+        - name: Install Papirus icons ( takes time up to 5 minutes, please wait )
+          ansible.builtin.apt:
+            pkg:
+              - papirus-icon-theme
+            update_cache: true
+
+        - name: Install Papirus folders icons
+          ansible.builtin.apt:
+            pkg:
+              - papirus-folders
+
+        - name: Set color of folders with Papirus folders icons
+          ansible.builtin.shell: |
+            papirus-folders -C brown --theme Papirus-Dark
+          changed_when: true
+
+        - name: Install Papirus theme for filezilla
+          ansible.builtin.apt:
+            pkg:
+              - filezilla-theme-papirus
+
+  # Nemo file manager folders colors
+
+    - name: Install Nemo file manager folders colors
+      become: true
+      block:
+
+        - name: Add nemo file manager folder colors ppa
+          ansible.builtin.shell: |
+            add-apt-repository --yes ppa:costales/folder-color
+          changed_when: true
+
+        - name: Install Nemo folder colors menu
+          ansible.builtin.apt:
+            pkg:
+              - folder-color-nemo
+            update_cache: true
+
+  #############################################################################################################
+
+  # Virtualization
+
+  #############################################################################################################
+
+  # Virtualbox
+
+    - name: Install Virtualbox
+      become: true
+      block:
+
+        - name: Install linux headers
+          ansible.builtin.shell: |
+            apt install linux-headers-$(uname -r)
+          changed_when: true
+
+        - name: Install virtualbox guest tool dependiences
+          ansible.builtin.apt:
+            pkg:
+              - build-essential
+              - virtualbox-guest-utils
+              - virtualbox-guest-x11
+
+  #############################################################################################################
+
+  # Dotfiles
+
+  #############################################################################################################
+
+  # Dotfiles - configuration files
+    - name: Clone a repo with dotfiles
+      ansible.builtin.git:
+        repo: https://github.com/pietryszak/dotfiles.git
+        dest: ~/.gc/dotfiles
+        version: main
+
+  # Screen layout
+
+    - name: Create a folder for screen layout
+      ansible.builtin.file:
+        path: ~/.screenlayout
+        state: directory
+        mode: '0744'
+
+    - name: Copy screen layout config for Virtualbox to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/screenlayout/
+        dest: ~/.screenlayout
+        mode: '0744'
+
+    - name: Make my scripts of screen layout executable
+      ansible.builtin.file:
+        path: ~/.screenlayout/
+        state: directory
+        mode: '0744'
+        recurse: true
+
+  # Copy files to proper configuration folder
+
+    - name: Copy terminator config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/terminator
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Copy bat config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/bat
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Copy Vscode config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/Code/settings.json
+        dest: ~/.config/Code/User/
+        mode: '0644'
+
+    - name: Copy htop config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/htop
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Copy neofetch config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/neofetch
+        dest: ~/.config
+        mode: '0664'
+
+    - name: Copy micro text editor config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/micro
+        dest: ~/.config
+        mode: '0744'
+
+    - name: Copy zsh sripts to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/zsh/scripts/
+        dest: ~/.oh-my-zsh/custom
+        mode: '0744'
+
+    - name: Copy zsh sripts to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/zsh/scripts/
+        dest: ~/.oh-my-zsh/custom
+        mode: '0744'
+
+    - name: Copy zshrc config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/zsh/.zshrc
+        dest: ~/
+        mode: '0644'
+
+    - name: Copy powerlevel10k config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/zsh/.p10k.zsh
+        dest: ~/
+        mode: '0644'
+
+    - name: Copy TeamViewer config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/teamviewer/
+        dest: ~/.config/teamviewer/
+        mode: '0644'
+
+    - name: Copy Copyq config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/copyq/
+        dest: ~/.config/copyq/
+        mode: '0644'
+
+    - name: Copy Flameshot config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/flameshot/
+        dest: ~/.config/flameshot/
+        mode: '0644'
+
+    - name: Copy bash_aliases to user folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/bashrc/.bash_aliases
+        dest: ~/
+        mode: '0644'
+
+    - name: Copy qt5ct config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/qt5ct
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Copy shortcuts list to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/shortcuts
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Copy i3 config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/i3
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Copy btop config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/btop/
+        dest: ~/.config/btop
+        mode: '0664'
+
+    - name: Copy volumeicon config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/volumeicon/
+        dest: ~/.config/volumeicon/
+        mode: '0644'
+
+    - name: Copy gtk 2 config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/gtk/.gtkrc-2.0
+        dest: ~/
+        mode: '0644'
+
+    - name: Copy gtk 3 config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/gtk/settings.ini
+        dest: ~/.config/gtk-3.0/
+        mode: '0644'
+
+    - name: Copy Xresources config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/xresources/
+        dest: ~/
+        mode: '0644'
+
+    - name: Copy polybar config to to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/polybar
+        dest: ~/.config
+        mode: '0644'
+
+    - name: Make scripts of polybar executable
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: file
+        mode: '0744'
+      with_items:
+        - ~/.config/polybar/cuts/scripts/launcher.sh
+        - ~/.config/polybar/cuts/scripts/powermenu.sh
+
+    - name: Make my scripts of polybar executable
+      ansible.builtin.file:
+        path: ~/.config/polybar/scripts/
+        state: directory
+        mode: '0744'
+        recurse: true
+
+    - name: Copy config to folders as sudo
+      become: true
+      block:
+
+        - name: Copy lightdm config to to proper folder
+          ansible.builtin.copy:
+            src: ~/.gc/dotfiles/lightdm/
+            dest: /etc/lightdm/
+            mode: '0644'
+
+        - name: Copy bash_aliases to sudo/root folder
+          ansible.builtin.copy:
+            src: ~/.gc/dotfiles/bashrc/.bash_aliases
+            dest: /root
+            mode: '0644'
+
+  # Wallpapers
+
+    - name: Clone wallpapers from my repo
+      ansible.builtin.git:
+        repo: https://github.com/pietryszak/wallpapers
+        dest: ~/Pictures/wallpapers
+        version: main
+
+    - name: Add wallpaper to lightdm
+      become: true
+      ansible.builtin.copy:
+        src: ~/Pictures/wallpapers/caffe-gruvbox.png
+        dest: /usr/share/pixmaps/
+        mode: '0644'
+
+  #############################################################################################################
+
+  # Last commands before restart
+
+  #############################################################################################################
+
+  # Astro vim
+
+    - name: Install a astro vim dependencies
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - nodejs
+
+    - name: Download astro vim
+      ansible.builtin.git:
+        repo: https://github.com/AstroNvim/AstroNvim
+        dest: ~/.config/nvim
+        version: main
+
+
+    - name: Create folder for astro vim user config
+      ansible.builtin.file:
+        path: ~/.config/nvim/lua/user/
+        state: directory
+        mode: '0744'
+
+    - name: Copy astro vim user config to proper folder
+      ansible.builtin.copy:
+        src: ~/.gc/dotfiles/astro
+        dest: ~/.config/nvim/lua/user/
+        mode: '0744'
+
+    - name: Install astro vim
+      ansible.builtin.command: |
+        nvim  --headless -c 'quitall'
+      changed_when: true
+
+  # Set locales
+
+    - name: Set locale at polish
+      become: true
+      ansible.builtin.blockinfile:
+        path: /etc/default/locale
+        block: |
+
+          # Polish locale
+          LC_NUMERIC="pl_PL.UTF-8"
+          LC_TIME="pl_PL.UTF-8"
+          LC_MONETARY="pl_PL.UTF-8"
+          LC_PAPER="pl_PL.UTF-8"
+          LC_NAME="pl_PL.UTF-8"
+          LC_ADDRESS="pl_PL.UTF-8"
+          LC_TELEPHONE="pl_PL.UTF-8"
+          LC_MEASUREMENT="pl_PL.UTF-8"
+          LC_IDENTIFICATION="pl_PL.UTF-8"
+
+    - name: Update locale
+      become: true
+      ansible.builtin.shell: |
+        locale-gen pl_PL.UTF-8
+        update-locale
+      changed_when: true
+
+  # Set timezone
+
+    - name: Set polish timezone
+      become: true
+      ansible.builtin.shell: |
+        timedatectl set-timezone Europe/Warsaw
+      changed_when: true
+
+  # Delete unused files
+
+    - name: Delete any leftover temporary files
+      become: true
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/apt/keyrings/microsoft.asc
+        - /etc/apt/keyrings/microsoft.gpg
+        - /etc/apt/keyrings/nodesource.gpg.key
+        - /etc/apt/keyrings/nodesource.gpg
+        - /usr/share/applications/gtkhash.desktop
+        - /usr/share/applications/picom.desktop
+        - /usr/share/applications/display-im6.q16.desktop
+        - /usr/share/applications/info.desktop
+        - /usr/share/applications/texdoctk.desktop
+        - /usr/share/fonts/README.md
+        - /usr/share/fonts/.git
+
+  # Delete unused packets
+
+    - name: Remove unused packets
+      become: true
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: absent
+      with_items:
+        - byobu
+        - vim
+        - vim-tiny
+        - vim-common
+        - vim-runtime
+        - nano
+
+  # Network Manager
+
+    - name: Install network manager
+      become: true
+      block:
+
+        - name: Install network manager and applet for networks
+          ansible.builtin.apt:
+            pkg:
+              - network-manager
+              - network-manager-gnome
+              - network-manager-config-connectivity-ubuntu
+              - network-manager-openvpn
+              - network-manager-openvpn-gnome
+              - network-manager-pptp
+              - network-manager-pptp-gnome
+
+        - name: Enable network manager service
+          ansible.builtin.systemd:
+            name: NetworkManager
+            enabled: true
+            state: started
