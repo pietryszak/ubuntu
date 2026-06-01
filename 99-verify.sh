@@ -2,6 +2,20 @@
 # [SSH->system] Szybka weryfikacja konfiguracji.
 set -uo pipefail
 
+# Raportuje parametr jądra: najpierw z aktywnego /proc/cmdline, a jeśli go tam
+# nie ma — z grub.cfg (czyli "zadziała po reboocie"). Dzięki temu uruchomienie
+# PRZED restartem nie pokazuje mylącego "BRAK", gdy konfiguracja w GRUB jest OK.
+report_param() {  # $1 = regex parametru (np. 'resume_offset=[0-9]*')
+  local v
+  if v=$(grep -o "$1" /proc/cmdline 2>/dev/null) && [[ -n "$v" ]]; then
+    echo "${v}   [aktywne w tym boocie]"
+  elif v=$(sudo grep -ho "$1" /boot/grub/grub.cfg 2>/dev/null | sort -u | head -1) && [[ -n "$v" ]]; then
+    echo "${v}   [w GRUB — zadziała po reboocie]"
+  else
+    echo "BRAK   [nie ma ani w /proc/cmdline, ani w grub.cfg]"
+  fi
+}
+
 echo "== Subwolumeny Btrfs =="
 sudo btrfs subvolume list / 2>/dev/null || true
 
@@ -12,7 +26,7 @@ grep -E 'btrfs|swap' /etc/fstab || true
 echo
 echo "== Swap / resume =="
 swapon --show || true
-echo -n "cmdline resume: "; (grep -o 'resume[^ ]*' /proc/cmdline || echo "BRAK")
+echo -n "resume:        "; report_param 'resume=UUID=[^ ]*'
 
 echo
 echo "== crypttab (TPM2?) =="
@@ -32,7 +46,7 @@ systemctl is-enabled nvidia-suspend.service nvidia-hibernate.service nvidia-resu
 
 echo
 echo "== Hibernacja: resume w initramfs/cmdline =="
-echo -n "cmdline resume_offset: "; (grep -o 'resume_offset=[0-9]*' /proc/cmdline || echo "BRAK")
+echo -n "resume_offset: "; report_param 'resume_offset=[0-9]*'
 echo -n "polkit hibernacji: "; ([[ -f /etc/polkit-1/rules.d/10-enable-hibernate.rules ]] && echo "jest" || echo "BRAK")
 
 echo
