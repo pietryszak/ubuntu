@@ -56,9 +56,15 @@ grep -q '/swap/swapfile' /etc/fstab || echo "/swap/swapfile none swap defaults 0
 OFFSET="$(btrfs inspect-internal map-swapfile -r /swap/swapfile)"
 echo ">> resume_offset: ${OFFSET}"
 cp -a /etc/default/grub "/etc/default/grub.bkp.$(date +%s)"
-# resume + szybsza kompresja obrazu hibernacji (lz4) — istotne przy dużym RAM
+# resume + szybsza kompresja obrazu hibernacji (lz4) — istotne przy dużym RAM.
+# Wstawiamy tuż za otwierającym cudzysłowem/apostrofem (Calamares używa '...').
+RESUME_ARGS="resume=UUID=${BTRFS_UUID} resume_offset=${OFFSET} hibernate.compressor=lz4"
 if ! grep -q 'resume_offset=' /etc/default/grub; then
-  sed -i "s#^GRUB_CMDLINE_LINUX_DEFAULT=\"#&resume=UUID=${BTRFS_UUID} resume_offset=${OFFSET} hibernate.compressor=lz4 #" /etc/default/grub
+  if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
+    sed -i -E "s/^(GRUB_CMDLINE_LINUX_DEFAULT=)([\"'])/\1\2${RESUME_ARGS} /" /etc/default/grub
+  else
+    echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${RESUME_ARGS}\"" >> /etc/default/grub
+  fi
 fi
 grep GRUB_CMDLINE_LINUX_DEFAULT /etc/default/grub
 update-grub
