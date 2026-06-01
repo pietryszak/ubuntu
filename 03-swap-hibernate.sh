@@ -22,7 +22,7 @@ grep -q 'subvol=@swap' /etc/fstab || \
 mkdir -p /swap
 mountpoint -q /swap || mount /swap
 
-# Swapfile = rozmiar RAM
+# Swapfile = RAM + bufor (patrz config.sh: best practice dla hibernacji)
 if [[ ! -f /swap/swapfile ]]; then
   btrfs filesystem mkswapfile --size "${SWAP_SIZE}" /swap/swapfile
 fi
@@ -33,18 +33,22 @@ grep -q '/swap/swapfile' /etc/fstab || echo "/swap/swapfile none swap defaults 0
 OFFSET="$(btrfs inspect-internal map-swapfile -r /swap/swapfile)"
 echo ">> resume_offset: ${OFFSET}"
 cp -a /etc/default/grub "/etc/default/grub.bkp.$(date +%s)"
+# resume + szybsza kompresja obrazu hibernacji (lz4) — istotne przy dużym RAM
 if ! grep -q 'resume_offset=' /etc/default/grub; then
-  sed -i "s#^GRUB_CMDLINE_LINUX_DEFAULT=\"#&resume=UUID=${BTRFS_UUID} resume_offset=${OFFSET} #" /etc/default/grub
+  sed -i "s#^GRUB_CMDLINE_LINUX_DEFAULT=\"#&resume=UUID=${BTRFS_UUID} resume_offset=${OFFSET} hibernate.compressor=lz4 #" /etc/default/grub
 fi
 grep GRUB_CMDLINE_LINUX_DEFAULT /etc/default/grub
 update-grub
 dracut -f
 
-# Odblokowanie hibernacji w Plasma (polkit)
-cat > /etc/polkit-1/rules.d/10-enable-hibernate.rules <<'EOF'
+# Odblokowanie hibernacji w Plasma (polkit) — zawężone do Twojego użytkownika
+cat > /etc/polkit-1/rules.d/10-enable-hibernate.rules <<EOF
 polkit.addRule(function(action, subject) {
-  if (action.id.indexOf("org.freedesktop.login1.hibernate") === 0 ||
-      action.id == "org.freedesktop.upower.hibernate") {
+  if ((action.id == "org.freedesktop.login1.hibernate" ||
+       action.id == "org.freedesktop.login1.hibernate-multiple-sessions" ||
+       action.id == "org.freedesktop.login1.handle-hibernate-key" ||
+       action.id == "org.freedesktop.upower.hibernate") &&
+      subject.user == "${USERNAME}") {
     return polkit.Result.YES;
   }
 });

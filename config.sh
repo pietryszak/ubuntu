@@ -10,11 +10,22 @@ EFIPART="/dev/nvme0n1p1"     # 1 GiB FAT32  -> /boot/efi
 BOOTPART="/dev/nvme0n1p2"    # 2 GiB ext4   -> /boot
 LUKSPART="/dev/nvme0n1p3"    # reszta LUKS2 -> Btrfs
 
-# --- Rozmiar swap = ilość RAM (wymóg hibernacji). 64 GiB RAM -> "64g" ---
-SWAP_SIZE="64g"
+# --- Rozmiar swap dla hibernacji: best practice RAM + bufor, NIE równo RAM ---
+# Obraz hibernacji może sięgnąć ~pełnego RAM, a swap pełni też zwykłą rolę,
+# więc potrzebny zapas. Wybrany wariant RHEL (bezpieczniejszy): 1.5 x RAM.
+#   64 GiB RAM -> 96 GiB  (oszczędny wariant Ubuntu RAM+round(sqrt(RAM)) = 72 GiB)
+SWAP_SIZE="96g"
 
 # --- TPM2: rejestry PCR (7 = stan Secure Boot). Można dodać PIN w 02-tpm2.sh ---
 TPM2_PCRS="7"
+
+# --- Twój login w docelowym systemie (utworzony w Calamares) ---
+# Używany w: regule polkit hibernacji (03), strojeniu Snappera (05), hardeningu (07).
+USERNAME="pietryszak"
+
+# --- IP, z którego dopuszczamy SSH (hardening w 07-hardening.sh) ---
+# Ustaw na adres laptopa w LAN. Wpisz "any" aby NIE ograniczać po adresie.
+SSH_FROM="192.168.1.10"
 
 # --- Dodatkowe subwolumeny: "nazwa=ścieżka_względem_@". Zakomentuj zbędne. ---
 EXTRA_SUBVOLS=(
