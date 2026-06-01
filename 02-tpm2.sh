@@ -32,7 +32,8 @@ if [[ "${KIND}" == dracut ]]; then
 else
   # --- initramfs-tools + clevis (natywna droga TPM2 na Ubuntu) ---
   apt-get update
-  apt-get install -y clevis clevis-luks clevis-initramfs cryptsetup-initramfs tpm2-tools
+  # UWAGA: pin 'tpm2' jest w osobnej paczce clevis-tpm2 (bez niej: "not a valid pin").
+  apt-get install -y clevis clevis-tpm2 clevis-luks clevis-initramfs cryptsetup-initramfs tpm2-tools
   echo ">> Zapisuję klucz TPM2 w slocie LUKS przez clevis (podaj obecne hasło LUKS):"
   # PCR 7 = stan Secure Boot. Dla maks. niezawodności można użyć '{}' (bez PCR).
   clevis luks bind -d "${LUKS}" tpm2 "{\"pcr_ids\":\"${TPM2_PCRS}\"}"
