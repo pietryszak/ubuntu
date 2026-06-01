@@ -19,7 +19,7 @@ Na Ubuntu **GRUB nie potrafi używać TPM2**, a podpisany GRUB nie zawiera modu�
 
 - `/boot` jest **nieszyfrowany (ext4)** — dzięki temu szyfrowany root odblokowuje **TPM2 w initramfs** → start i wybudzenie z hibernacji **bez hasła**;
 - **Secure Boot wyłączony** — upraszcza sterowniki NVIDIA (brak fizycznego MOK enrollment, więc instalacja NVIDII też idzie zdalnie);
-- Kubuntu 26.04 używa **dracut** (jak Fedora), więc TPM2/initramfs konfiguruje się niemal identycznie.
+- Kubuntu 26.04 (instalacja z Calamares) używa **initramfs-tools**, więc TPM2 robimy przez **clevis** (`clevis-initramfs`), a initramfs przebudowujemy `update-initramfs`. Skrypty same wykrywają generator (gdyby był dracut — użyją `systemd-cryptenroll` + `dracut`).
 
 Kompromis: jądro i initramfs w `/boot` nie są szyfrowane ani objęte rollbackiem snapshotów.
 

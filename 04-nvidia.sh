@@ -3,7 +3,11 @@
 # Secure Boot wyłączony => brak MOK => można zdalnie.
 set -euo pipefail
 
-[[ $EUID -eq 0 ]] || { echo "Uruchom przez sudo: sudo bash 04-nvidia.sh"; exit 1; }
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+require_root
 
 apt-get update
 
@@ -25,7 +29,7 @@ EOF
 # Usługi NVIDIA dla stanów uśpienia
 systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service || true
 
-dracut -f
+rebuild_initramfs
 
 echo ">> NVIDIA gotowe. Zalecany restart."
 echo ">> Jeśli hibernacja zwróci błąd -5/pci_pm_freeze, sprawdź:"

@@ -70,6 +70,26 @@ detect_target_user() {
   fi
 }
 
+# Generator initramfs: "initramfs-tools" (domyślny w Ubuntu/Kubuntu) lub "dracut"
+initramfs_kind() {
+  if command -v update-initramfs >/dev/null 2>&1 && [[ -d /etc/initramfs-tools ]]; then
+    echo initramfs-tools
+  elif command -v dracut >/dev/null 2>&1; then
+    echo dracut
+  else
+    echo initramfs-tools
+  fi
+}
+
+# Przebuduj initramfs właściwym narzędziem
+rebuild_initramfs() {
+  if [[ "$(initramfs_kind)" == dracut ]]; then
+    dracut -f
+  else
+    update-initramfs -u -k all
+  fi
+}
+
 # IP, z którego trwa połączenie SSH (SSH_CONNECTION gubi się pod sudo -> fallback who -m)
 detect_ssh_from() {
   if [[ -n "${SSH_CONNECTION:-}" ]]; then

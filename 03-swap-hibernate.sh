@@ -62,7 +62,7 @@ if ! grep -q 'resume_offset=' /etc/default/grub; then
 fi
 grep GRUB_CMDLINE_LINUX_DEFAULT /etc/default/grub
 update-grub
-dracut -f
+rebuild_initramfs
 
 # Odblokowanie hibernacji w Plasma (polkit) — zawężone do Twojego użytkownika
 cat > /etc/polkit-1/rules.d/10-enable-hibernate.rules <<EOF
