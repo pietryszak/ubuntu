@@ -23,7 +23,8 @@ TPM2_PCRS="7"
 USERNAME="johndoe"
 
 # --- IP laptopa do SSH w hardeningu 07 (puste = wykryte z sesji SSH; "any" = bez ograniczeń) ---
-SSH_FROM=""
+# Pojedynczy host (bez /24). Ustaw rezerwację DHCP/statyk na routerze dla tego IP.
+SSH_FROM="192.168.1.249"
 
 # --- Dodatkowe subwolumeny: "nazwa=ścieżka_względem_@". Zakomentuj zbędne. ---
 EXTRA_SUBVOLS=(
